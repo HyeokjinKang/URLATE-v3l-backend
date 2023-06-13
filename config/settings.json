@@ -1,0 +1,46 @@
+{
+  "general": {
+    "detailLang": "original"
+  },
+  "display": {
+    "canvasRes": 100,
+    "albumRes": 75
+  },
+  "sound": {
+    "volume": {
+      "master": 0.4,
+      "music": 1,
+      "hitSound": 1,
+      "effect": 1
+    },
+    "offset": 0,
+    "res": "128kbps"
+  },
+  "input": {
+    "sens": 1,
+    "keys": 0,
+    "wheelReverse": 0,
+    "mouse": true
+  },
+  "game": {
+    "skin": "Default",
+    "size": 1,
+    "judgeSkin": true,
+    "applyJudge": {
+      "Perfect": false,
+      "Great": false,
+      "Good": false,
+      "Bad": false,
+      "Miss": false,
+      "Bullet": false
+    },
+    "counter": true,
+    "comboAlert": true,
+    "comboCount": 50
+  },
+  "editor": {
+    "denyCursor": true,
+    "denySkin": true,
+    "denyAtTest": false
+  }
+}

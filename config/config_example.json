@@ -1,0 +1,45 @@
+{
+  "$schema": "../schema/config.schema.json",
+  "project": {
+    "url": "https://example.com",
+    "api": "https://api.example.com",
+    "cdn": "https://cdn.example.com",
+    "game": "https://game.example.com",
+    "communityUrl": "https://community.example.com",
+    "miraiUrl": "https://mirai.example.com",
+    "secretKey": "Something Random",
+    "port": 8080
+  },
+  "database": {
+    "redis": "localhost:6379",
+    "db": "ExampleDB",
+    "host": "localhost",
+    "port": 3306,
+    "user": "USERNAME",
+    "password": "PASSWORD"
+  },
+  "session": {
+    "secret": "SESSION SECRET",
+    "resave": false,
+    "saveUninitialized": false
+  },
+  "google": {
+    "clientId": "GOOGLE CLIENT ID",
+    "clientSecret": "GOOGLE CLIENT SECRET"
+  },
+  "toss": {
+    "clientKey": "TOSS PAYMENTS CLIENT KEY",
+    "secretKey": "TOSS PAYMENTS SECRET KEY",
+    "basicKey": "TOSS PAYMENTS BASIC KEY"
+  },
+  "tossBilling": {
+    "clientKey": "TOSS PAYMENTS CLIENT KEY FOR BILLING",
+    "secretKey": "TOSS PAYMENTS SECRET KEY FOR BILLING",
+    "basicKey": "TOSS PAYMENTS BASIC KEY FOR BILLING"
+  },
+  "danal": {
+    "CPID": "DANAL CPID",
+    "CPPWD": "DANAL CPPWD",
+    "targetUrl": "DANAL TARGETURL"
+  }
+}
