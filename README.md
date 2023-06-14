@@ -1,5 +1,7 @@
 ## URLATE-v3l-backend
 
+![image](urlate-v3l.png)
+
 > Avoid & Get on the tempo, URLATE.
 
 본 리포지토리는 [URLATE-v3-backend](https://github.com/team-croissant/urlate-v3-backend)의 복사본을 기반으로 개발되었습니다.  
