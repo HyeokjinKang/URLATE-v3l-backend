@@ -5,8 +5,7 @@ import cookieParser from "cookie-parser";
 import express from "express";
 import mysqlSession from "express-mysql-session";
 import signale from "signale";
-import knexClient from "knex";
-import jwt_decode from "jwt-decode";
+const { OAuth2Client } = require("google-auth-library");
 import { URLATEConfig } from "./types/config.schema";
 import {
   createSuccessResponse,
@@ -19,10 +18,12 @@ const settingsConfig = require(__dirname + "/../config/settings.json");
 
 const MySQLStore = mysqlSession(session);
 
+const gidClient = new OAuth2Client(config.google.clientId);
+
 const app = express();
 app.locals.pretty = true;
 
-const knex = knexClient({
+const knex = require("knex")({
   client: "mysql",
   connection: {
     host: config.database.host,
@@ -53,6 +54,14 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+async function gidVerify(token: String, clientId: String) {
+  const ticket = await gidClient.verifyIdToken({
+    idToken: token,
+    audience: clientId,
+  });
+  return ticket.getPayload();
+}
+
 app.get("/auth/status", async (req, res) => {
   if (!req.session.userid) {
     res.status(200).json(createStatusResponse("Not logined"));
@@ -72,8 +81,21 @@ app.get("/auth/status", async (req, res) => {
   res.status(200).json(createStatusResponse("Logined"));
 });
 
-app.post("/auth/login", (req, res) => {
-  const payload: any = jwt_decode(req.body.jwt.credential);
+app.post("/auth/login", async (req, res) => {
+  const payload: any = await gidVerify(
+    req.body.jwt.credential,
+    req.body.jwt.clientId
+  ).catch((e: any) => {
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Verification failed",
+          "JWT Verification failed. Did you arbitrarily modify the JWT?"
+        )
+      );
+  });
   if (payload.email == "bjgumsun@gmail.com") {
     req.session.userid = payload.sub;
     req.session.email = payload.email;
@@ -295,7 +317,7 @@ app.put("/settings", async (req, res) => {
     await knex("users")
       .update({ settings: JSON.stringify(req.body.settings) })
       .where("userid", req.session.userid);
-  } catch (e) {
+  } catch (e: any) {
     res
       .status(400)
       .json(createErrorResponse("failed", "Error occured while updating", e));
@@ -321,7 +343,7 @@ app.put("/tutorial", async (req, res) => {
     await knex("users")
       .update({ tutorial: 1 })
       .where("userid", req.session.userid);
-  } catch (e) {
+  } catch (e: any) {
     res
       .status(400)
       .json(createErrorResponse("failed", "Error occured while updating", e));
@@ -411,7 +433,7 @@ app.put("/record", async (req, res) => {
       difficulty: req.body.difficulty,
       isBest: isBest,
     });
-  } catch (e) {
+  } catch (e: any) {
     res
       .status(400)
       .json(createErrorResponse("failed", "Error occured while updating", e));
@@ -445,7 +467,7 @@ app.get(
       .orderBy(req.params.order, req.params.sort);
     const rank =
       results
-        .map((d) => {
+        .map((d: any) => {
           return d["nickname"];
         })
         .indexOf(req.params.nickname) + 1;
@@ -541,7 +563,7 @@ app.put("/coupon", async (req, res) => {
         .update({ usedUser: JSON.stringify(usedUser) })
         .where("code", code);
     }
-  } catch (e) {
+  } catch (e: any) {
     res
       .status(400)
       .json(createErrorResponse("failed", "Error occured while loading", e));
