@@ -82,37 +82,39 @@ app.get("/auth/status", async (req, res) => {
 });
 
 app.post("/auth/login", async (req, res) => {
-  const payload: any = await gidVerify(
-    req.body.jwt.credential,
-    req.body.jwt.clientId
-  ).catch((e: any) => {
+  try {
+    const payload: any = await gidVerify(
+      req.body.jwt.credential,
+      req.body.jwt.clientId
+    );
+    if (payload.email == "bjgumsun@gmail.com") {
+      req.session.userid = payload.sub;
+      req.session.email = payload.email;
+      req.session.tempName = payload.name;
+      req.session.save(() => {
+        signale.debug(new Date());
+        signale.debug(`User logined : ${payload.email}`);
+        res.status(200).json(createSuccessResponse("success"));
+      });
+    } else {
+      res
+        .status(400)
+        .json(
+          createErrorResponse(
+            "failed",
+            "Not whitelisted",
+            "App is testing now. Only testers can login."
+          )
+        );
+    }
+  } catch (e: any) {
     res
       .status(400)
       .json(
         createErrorResponse(
           "failed",
           "Verification failed",
-          "JWT Verification failed. Did you arbitrarily modify the JWT?"
-        )
-      );
-  });
-  if (payload.email == "bjgumsun@gmail.com") {
-    req.session.userid = payload.sub;
-    req.session.email = payload.email;
-    req.session.tempName = payload.name;
-    req.session.save(() => {
-      signale.debug(new Date());
-      signale.debug(`User logined : ${payload.email}`);
-      res.status(200).json(createSuccessResponse("success"));
-    });
-  } else {
-    res
-      .status(400)
-      .json(
-        createErrorResponse(
-          "failed",
-          "Not whitelisted",
-          "App is testing now. Only testers can login."
+          "JWT Verification failed. Did you modify the JWT?"
         )
       );
   }
