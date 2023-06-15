@@ -6,6 +6,7 @@ import express from "express";
 import mysqlSession from "express-mysql-session";
 import signale from "signale";
 import knexClient from "knex";
+import jwt_decode from "jwt-decode";
 import { URLATEConfig } from "./types/config.schema";
 import {
   createSuccessResponse,
@@ -72,7 +73,7 @@ app.get("/auth/status", async (req, res) => {
 });
 
 app.post("/auth/login", (req, res) => {
-  const payload = parseJwt(req.body.jwt.credential);
+  const payload: any = jwt_decode(req.body.jwt.credential);
   if (payload.email == "bjgumsun@gmail.com") {
     req.session.userid = payload.sub;
     req.session.email = payload.email;
@@ -564,22 +565,6 @@ app.get("/auth/logout", (req, res) => {
     }
   });
 });
-
-const parseJwt = (token) => {
-  var base64Url = token.split(".")[1];
-  var base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-  var jsonPayload = decodeURIComponent(
-    Buffer.from(base64, "base64")
-      .toString()
-      .split("")
-      .map(function (c) {
-        return "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2);
-      })
-      .join("")
-  );
-
-  return JSON.parse(jsonPayload);
-};
 
 app.listen(config.project.port, () => {
   signale.success(`API Server running at port ${config.project.port}.`);
