@@ -590,6 +590,132 @@ app.get("/auth/logout", (req, res) => {
   });
 });
 
+app.put("/CPLrecord", async (req, res) => {
+  if (req.body.secret !== config.project.secretKey) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Authorize failed",
+          "Project secret key is not vaild."
+        )
+      );
+    return;
+  }
+  try {
+    let isBest = 0;
+    let gap = 0;
+    const result = await knex("CPLtrackRecords")
+      .select("record")
+      .where("nickname", req.body.nickname)
+      .where("name", req.body.name)
+      .where("isBest", 1)
+      .where("difficulty", req.body.difficulty)
+      .where("id", req.body.id);
+    if (result.length && result[0].record < req.body.record) {
+      isBest = 1;
+      gap = req.body.record - result[0].record;
+      await knex("CPLtrackRecords")
+        .update({
+          isBest: 0,
+        })
+        .where("nickname", req.body.nickname)
+        .where("name", req.body.name)
+        .where("isBest", 1)
+        .where("difficulty", req.body.difficulty)
+        .where("id", req.body.id);
+    }
+    if (!result.length) {
+      isBest = 1;
+      gap = req.body.record;
+    }
+    await knex("CPLtrackRecords").insert({
+      id: req.body.id,
+      name: req.body.name,
+      nickname: req.body.nickname,
+      rank: req.body.rank,
+      record: req.body.record,
+      maxcombo: req.body.maxcombo,
+      difficulty: req.body.difficulty,
+      isBest: isBest,
+    });
+    const total = await knex("CPLTotalTrackRecords")
+      .select("record")
+      .where("nickname", req.body.nickname)
+      .where("name", req.body.name)
+      .where("difficulty", req.body.difficulty);
+    const score = total[0].record + gap;
+    if (total.length) {
+      await knex("CPLTotalTrackRecords")
+        .update({
+          record: score,
+        })
+        .where("nickname", req.body.nickname)
+        .where("name", req.body.name)
+        .where("difficulty", req.body.difficulty);
+    } else {
+      await knex("CPLTotalTrackRecords").insert({
+        name: req.body.name,
+        nickname: req.body.nickname,
+        record: req.body.record,
+        difficulty: req.body.difficulty,
+      });
+    }
+  } catch (e: any) {
+    res
+      .status(400)
+      .json(createErrorResponse("failed", "Error occured while updating", e));
+    return;
+  }
+  res.status(200).json(createSuccessResponse("success"));
+});
+
+app.get(
+  "/CPLrecords/:track/:difficulty/:order/:sort/:nickname",
+  async (req, res) => {
+    const results = await knex("CPLTotalTrackRecords")
+      .select("record", "nickname")
+      .where("name", req.params.track)
+      .where("difficulty", req.params.difficulty)
+      .orderBy(req.params.order, req.params.sort);
+    const rank =
+      results
+        .map((d: any) => {
+          return d["nickname"];
+        })
+        .indexOf(req.params.nickname) + 1;
+    res
+      .status(200)
+      .json({ result: "success", results: results.slice(0, 100), rank: rank });
+  }
+);
+
+app.get("/CPLpatternList/:name/:difficulty", async (req, res) => {
+  const results = await knex("CPLpatternInfo")
+    .select(
+      "id",
+      "patternName",
+      "name",
+      "author",
+      "description",
+      "analyzed",
+      "community",
+      "star",
+      "difficulty"
+    )
+    .where("name", req.params.name)
+    .where("difficulty", req.params.difficulty);
+  res.status(200).json({ result: "success", data: results });
+});
+
+app.get("/CPLtrackInfo/:name", async (req, res) => {
+  const results = await knex("CPLpatternInfo")
+    .select("name", "difficulty")
+    .where("name", req.params.name);
+  res.status(200).json({ result: "success", info: results });
+});
+
 app.listen(config.project.port, () => {
   signale.success(`API Server running at port ${config.project.port}.`);
 });
