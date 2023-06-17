@@ -31,6 +31,7 @@ const knex = require("knex")({
     password: config.database.password,
     database: config.database.db,
   },
+  pool: { min: 0, max: 7 },
 });
 
 const sessionStore = new MySQLStore({
