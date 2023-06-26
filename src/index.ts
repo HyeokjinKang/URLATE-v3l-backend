@@ -5,6 +5,7 @@ import cookieParser from "cookie-parser";
 import express from "express";
 import mysqlSession from "express-mysql-session";
 import signale from "signale";
+import fetch from "node-fetch";
 const { OAuth2Client } = require("google-auth-library");
 import { URLATEConfig } from "./types/config.schema";
 import {
@@ -391,6 +392,136 @@ app.get("/teamProfile/:name", async (req, res) => {
 
 app.get("/trackCount/:name", async (req, res) => {
   res.end();
+});
+
+app.put("/playRecord", async (req, res) => {
+  //doesn't scan the entire record yet
+  //userid, username, rank, score, maxCombo, perfect, great, good, bad, miss, bullet, accuracy, record
+  if (!req.session.userid) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "UserID Required",
+          "UserID is required for this task."
+        )
+      );
+    return;
+  }
+
+  const results = await knex("users")
+    .select("nickname", "userid")
+    .where("userid", req.session.userid);
+  if (!results.length) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Failed to Load",
+          "Failed to load data. Use /auth/status to check your status."
+        )
+      );
+    return;
+  }
+
+  if (results[0].userid == req.body.userid && results[0].username == req.body.username) {
+    let accuracy = Number((((req.body.perfect + (req.body.great / 10) * 7 + req.body.good / 2 + (req.body.bad / 10) * 3) / (req.body.perfect + req.body.great + req.body.good + req.body.bad + req.body.miss + req.body.bullet)) * 100).toFixed(1));
+    let rank = "";
+    let medal = 1;
+    if (accuracy >= 98 && req.body.bad == 0 && req.body.miss == 0 && req.body.bullet == 0) {
+      rank = "SS";
+    } else if (accuracy >= 95) {
+      rank = "S";
+    } else if (accuracy >= 90) {
+      rank = "A";
+    } else if (accuracy >= 80) {
+      rank = "B";
+    } else if (accuracy >= 70) {
+      rank = "C";
+    } else {
+      rank = "F";
+      medal = 0;
+    }
+    if (req.body.miss == 0 && req.body.bullet == 0) {
+      if (medal == 0) {
+        medal = 2;
+      } else {
+        medal = 3;
+      }
+      if (req.body.bad == 0 && req.body.good == 0 && req.body.great < 10 && req.body.perfect != 0) {
+        medal = 7;
+      }
+    }
+    if (rank == req.body.rank && accuracy == req.body.accuracy) {
+      fetch(`${config.project.api}/record`, {
+        method: "PUT",
+        body: JSON.stringify({
+          secret: config.project.secretKey,
+          name: req.body.name,
+          nickname: req.body.userName,
+          rank,
+          record: req.body.score,
+          maxcombo: req.body.maxCombo,
+          medal,
+          difficulty: req.body.difficulty,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if(data.result == "success") {
+            res.status(200).json(createSuccessResponse("success"));
+          } else {
+            res
+              .status(400)
+              .json(
+                createErrorResponse(
+                  "failed",
+                  "Failed to Update",
+                  `Failed to update score. ${JSON.stringify(data.error)}`
+                )
+              );
+          }
+        }).catch(e => {
+          res
+            .status(400)
+            .json(
+              createErrorResponse(
+                "failed",
+                "Failed to Update",
+                `Failed to update score. ${e}`
+              )
+            );
+          return;
+        });
+    } else {
+      res
+        .status(400)
+        .json(
+          createErrorResponse(
+            "failed",
+            "Failed to Auth",
+            "Failed to auth. Use /auth/status to check your status."
+          )
+        );
+      return;
+    }
+  } else {
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Failed to Auth",
+          "Failed to auth. Use /auth/status to check your status."
+        )
+      );
+    return;
+  }
 });
 
 app.put("/record", async (req, res) => {
