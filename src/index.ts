@@ -427,10 +427,16 @@ app.put("/playRecord", async (req, res) => {
   }
 
   if (results[0].userid == req.body.userid && results[0].username == req.body.username) {
-    let accuracy = Number((((req.body.perfect + (req.body.great / 10) * 7 + req.body.good / 2 + (req.body.bad / 10) * 3) / (req.body.perfect + req.body.great + req.body.good + req.body.bad + req.body.miss + req.body.bullet)) * 100).toFixed(1));
+    const perfect = Number(req.body.perfect);
+    const great = Number(req.body.great);
+    const good = Number(req.body.good);
+    const bad = Number(req.body.bad);
+    const miss = Number(req.body.miss);
+    const bullet = Number(req.body.bullet);
+    let accuracy = Number((((perfect + (great / 10) * 7 + good / 2 + (bad / 10) * 3) / (perfect + great + good + bad + miss + bullet)) * 100).toFixed(1));
     let rank = "";
     let medal = 1;
-    if (accuracy >= 98 && req.body.bad == 0 && req.body.miss == 0 && req.body.bullet == 0) {
+    if (accuracy >= 98 && bad == 0 && miss == 0 && bullet == 0) {
       rank = "SS";
     } else if (accuracy >= 95) {
       rank = "S";
@@ -444,13 +450,13 @@ app.put("/playRecord", async (req, res) => {
       rank = "F";
       medal = 0;
     }
-    if (req.body.miss == 0 && req.body.bullet == 0) {
+    if (miss == 0 && bullet == 0) {
       if (medal == 0) {
         medal = 2;
       } else {
         medal = 3;
       }
-      if (req.body.bad == 0 && req.body.good == 0 && req.body.great < 10 && req.body.perfect != 0) {
+      if (bad == 0 && good == 0 && great < 10 && perfect != 0) {
         medal = 7;
       }
     }
@@ -466,6 +472,7 @@ app.put("/playRecord", async (req, res) => {
           maxcombo: req.body.maxCombo,
           medal,
           difficulty: req.body.difficulty,
+          log: req.body.record
         }),
         headers: {
           "Content-Type": "application/json",
@@ -566,6 +573,7 @@ app.put("/record", async (req, res) => {
       medal: req.body.medal,
       difficulty: req.body.difficulty,
       isBest: isBest,
+      log: req.body.log
     });
   } catch (e: any) {
     res
