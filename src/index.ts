@@ -426,14 +426,23 @@ app.put("/playRecord", async (req, res) => {
     return;
   }
 
-  if (results[0].userid == req.body.userid && results[0].username == req.body.username) {
+  if (
+    results[0].userid == req.body.userid &&
+    results[0].username == req.body.username
+  ) {
     const perfect = Number(req.body.perfect);
     const great = Number(req.body.great);
     const good = Number(req.body.good);
     const bad = Number(req.body.bad);
     const miss = Number(req.body.miss);
     const bullet = Number(req.body.bullet);
-    let accuracy = Number((((perfect + (great / 10) * 7 + good / 2 + (bad / 10) * 3) / (perfect + great + good + bad + miss + bullet)) * 100).toFixed(1));
+    let accuracy = Number(
+      (
+        ((perfect + (great / 10) * 7 + good / 2 + (bad / 10) * 3) /
+          (perfect + great + good + bad + miss + bullet)) *
+        100
+      ).toFixed(1)
+    );
     let rank = "";
     let medal = 1;
     if (accuracy >= 98 && bad == 0 && miss == 0 && bullet == 0) {
@@ -472,7 +481,7 @@ app.put("/playRecord", async (req, res) => {
           maxcombo: req.body.maxCombo,
           medal,
           difficulty: req.body.difficulty,
-          log: req.body.record
+          log: JSON.stringify(req.body.record),
         }),
         headers: {
           "Content-Type": "application/json",
@@ -480,7 +489,7 @@ app.put("/playRecord", async (req, res) => {
       })
         .then((res) => res.json())
         .then((data) => {
-          if(data.result == "success") {
+          if (data.result == "success") {
             res.status(200).json(createSuccessResponse("success"));
           } else {
             res
@@ -493,7 +502,8 @@ app.put("/playRecord", async (req, res) => {
                 )
               );
           }
-        }).catch(e => {
+        })
+        .catch((e) => {
           res
             .status(400)
             .json(
@@ -511,8 +521,8 @@ app.put("/playRecord", async (req, res) => {
         .json(
           createErrorResponse(
             "failed",
-            "Failed to Auth",
-            "Failed to auth. Use /auth/status to check your status."
+            "Failed to Verify",
+            "Failed to verify submitted data."
           )
         );
       return;
@@ -573,7 +583,7 @@ app.put("/record", async (req, res) => {
       medal: req.body.medal,
       difficulty: req.body.difficulty,
       isBest: isBest,
-      log: req.body.log
+      log: req.body.log,
     });
   } catch (e: any) {
     res
