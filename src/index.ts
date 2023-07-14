@@ -460,7 +460,9 @@ app.put("/playRecord", async (req, res) => {
     }
     if (rank == req.body.rank && accuracy == req.body.accuracy) {
       fs.outputJson(
-        `${__dirname}/logs/${req.body.userName}/${req.body.name}.json`,
+        `${__dirname}/../logs/${req.body.userName}/${
+          req.body.name
+        }/${new Date().toString()}.json`,
         req.body.record
       );
       fetch(`${config.project.api}/record`, {
