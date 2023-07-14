@@ -6,6 +6,7 @@ import express from "express";
 import mysqlSession from "express-mysql-session";
 import signale from "signale";
 import fetch from "node-fetch";
+const fs = require("fs-extra");
 const { OAuth2Client } = require("google-auth-library");
 import { URLATEConfig } from "./types/config.schema";
 import {
@@ -458,6 +459,10 @@ app.put("/playRecord", async (req, res) => {
       }
     }
     if (rank == req.body.rank && accuracy == req.body.accuracy) {
+      fs.outputJson(
+        `${__dirname}/logs/${req.body.userName}/${req.body.name}.json`,
+        req.body.record
+      );
       fetch(`${config.project.api}/record`, {
         method: "PUT",
         body: JSON.stringify({
@@ -469,7 +474,6 @@ app.put("/playRecord", async (req, res) => {
           maxcombo: req.body.maxCombo,
           medal,
           difficulty: req.body.difficulty,
-          log: JSON.stringify(req.body.record),
         }),
         headers: {
           "Content-Type": "application/json",
@@ -571,7 +575,6 @@ app.put("/record", async (req, res) => {
       medal: req.body.medal,
       difficulty: req.body.difficulty,
       isBest: isBest,
-      log: req.body.log,
     });
   } catch (e: any) {
     res
