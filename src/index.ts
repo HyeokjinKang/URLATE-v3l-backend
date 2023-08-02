@@ -576,6 +576,7 @@ app.put("/record", async (req, res) => {
       maxcombo: req.body.maxcombo,
       medal: req.body.medal,
       difficulty: req.body.difficulty,
+      date: new Date(),
       isBest: isBest,
     });
   } catch (e: any) {
