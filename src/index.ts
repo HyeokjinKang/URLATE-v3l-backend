@@ -92,7 +92,8 @@ app.post("/auth/login", async (req, res) => {
     );
     req.session.userid = payload.sub;
     req.session.email = payload.email;
-    req.session.tempName = payload.name;
+    req.session.picture = payload.picture;
+    req.session.tempName = payload.name || payload.given_name || "Name";
     req.session.save(() => {
       signale.debug(new Date());
       signale.debug(`User logined : ${payload.email}`);
@@ -149,6 +150,7 @@ app.post("/auth/join", async (req, res) => {
       settings: JSON.stringify(settingsConfig),
       skins: '["Default"]',
       tutorial: 3,
+      picture: req.session.picture,
     });
     delete req.session.tempName;
     req.session.save(() => {
@@ -722,7 +724,7 @@ app.get("/auth/logout", (req, res) => {
   delete req.session.userid;
   delete req.session.tempName;
   delete req.session.email;
-  delete req.session.vaildChecked;
+  delete req.session.picture;
   req.session.save(() => {
     if (req.query.redirect == "true") {
       let adder = "";
