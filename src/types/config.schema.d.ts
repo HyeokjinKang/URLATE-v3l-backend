@@ -17,19 +17,19 @@ export interface URLATEConfig {
   database: Database;
   session: Session;
   google: GoogleAPI;
-  toss: TossAPI;
-  tossBilling: TossBillingAPI;
-  danal: DanalAPI;
 }
 /**
  * URLATE 자체 설정입니다.
  */
 export interface Project {
-  api: string;
   /**
    * 현재 프론트 엔드 서버가 호스트되고 있는 URL입니다. 슬래시로 끝나면 안되는 것에 주의합니다.
    */
   url: string;
+  /**
+   * 백엔드 서버가 호스트 될 URL입니다. 슬래시로 끝나면 안되는 것에 주의합니다
+   */
+  api?: string;
   /**
    * 백엔드 서버가 열릴 포트입니다.
    */
@@ -37,13 +37,9 @@ export interface Project {
   secretKey: string;
 }
 /**
- * 데이터베이스 연결을 위한 설정입니다.
+ * 데이터베이스 연결 설정입니다.
  */
 export interface Database {
-  /**
-   * Redis 서버 주소입니다.
-   */
-  redis: string;
   /**
    * MySQL 서버 호스트입니다. 주 데이터베이스 및 세션 저장소에 활용됩니다.
    */
@@ -66,7 +62,7 @@ export interface Database {
   db: string;
 }
 /**
- * 세션 관련 설정입니다.
+ * 세션 설정입니다.
  */
 export interface Session {
   /**
@@ -92,32 +88,12 @@ export interface Session {
  * Google API 설정입니다.
  */
 export interface GoogleAPI {
+  /**
+   * Google API 클라이언트 ID입니다.
+   */
   clientId: string;
+  /**
+   * Google API 클라이언트 Secret Key입니다.
+   */
   clientSecret: string;
-}
-/**
- * Toss API 설정입니다.
- */
-export interface TossAPI {
-  /**
-   * Toss API를 사용할 때 Basic 인증을 하기 위해 쓰는 토큰입니다.
-   */
-  basicKey: string;
-}
-/**
- * Toss Billing API 설정입니다.
- */
-export interface TossBillingAPI {
-  /**
-   * Toss Billing API를 사용할 때 Basic 인증을 하기 위해 쓰는 토큰입니다.
-   */
-  basicKey: string;
-}
-/**
- * Danal API 설정입니다.
- */
-export interface DanalAPI {
-  CPID: string;
-  CPPWD: string;
-  targetUrl: string;
 }

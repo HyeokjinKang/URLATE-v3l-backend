@@ -1,22 +1,13 @@
 {
   "$schema": "http://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Team-Croissant/URLATE-backend/blob/master/src/schema/config.schema.json",
+  "$id": "https://github.com/HyeokjinKang/URLATE-v3l-backend/blob/master/src/schema/config.schema.json",
 
   "title": "URLATE Config",
   "description": "URLATE 백엔드 서버를 구동하기 위한 설정입니다.",
 
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "$schema",
-    "project",
-    "database",
-    "session",
-    "google",
-    "toss",
-    "tossBilling",
-    "danal"
-  ],
+  "required": ["$schema", "project", "database", "session", "google"],
 
   "properties": {
     "$schema": {
@@ -39,6 +30,12 @@
           "description": "현재 프론트 엔드 서버가 호스트되고 있는 URL입니다. 슬래시로 끝나면 안되는 것에 주의합니다.",
           "examples": ["http://localhost"]
         },
+        "api": {
+          "type": "string",
+          "format": "uri",
+          "description": "백엔드 서버가 호스트 될 URL입니다. 슬래시로 끝나면 안되는 것에 주의합니다",
+          "examples": ["http://localhost"]
+        },
         "port": {
           "type": "integer",
           "minimum": 0,
@@ -57,15 +54,9 @@
 
       "type": "object",
       "additionalProperties": false,
-      "required": ["redis", "host", "port", "user", "password", "db"],
+      "required": ["host", "port", "user", "password", "db"],
 
       "properties": {
-        "redis": {
-          "type": "string",
-          "format": "uri",
-          "description": "Redis 서버 접근 URI입니다.",
-          "examples": ["redis://:secret@localhost:6379/0"]
-        },
         "host": {
           "type": "string",
           "format": "hostname",
@@ -127,57 +118,16 @@
 
       "type": "object",
       "additionalProperties": false,
-      "required": [],
-
-      "properties": {}
-    },
-    "toss": {
-      "title": "Toss API",
-      "description": "Toss API 설정입니다.",
-
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["basicKey"],
+      "required": ["clientId", "clientSecret"],
 
       "properties": {
-        "basicKey": {
+        "clientId": {
           "type": "string",
-          "description": "Toss API를 사용할 때 Basic 인증을 하기 위해 쓰는 토큰입니다."
-        }
-      }
-    },
-    "tossBilling": {
-      "title": "Toss Billing API",
-      "description": "Toss Billing API 설정입니다.",
-
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["basicKey"],
-
-      "properties": {
-        "basicKey": {
+          "description": "Google API 클라이언트 ID입니다."
+        },
+        "clientSecret": {
           "type": "string",
-          "description": "Toss Billing API를 사용할 때 Basic 인증을 하기 위해 쓰는 토큰입니다."
-        }
-      }
-    },
-    "danal": {
-      "title": "Danal API",
-      "description": "Danal API 설정입니다.",
-
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["CPID", "CPPWD", "targetUrl"],
-
-      "properties": {
-        "CPID": {
-          "type": "string"
-        },
-        "CPPWD": {
-          "type": "string"
-        },
-        "targetUrl": {
-          "type": "string"
+          "description": "Google API 클라이언트 Secret Key입니다."
         }
       }
     }
