@@ -184,7 +184,7 @@ app.get("/user", async (req, res) => {
   }
 
   const results = await knex("users")
-    .select("nickname", "settings", "skins", "userid", "tutorial")
+    .select("nickname", "settings", "skins", "userid", "tutorial", "picture")
     .where("userid", req.session.userid);
   if (!results.length) {
     res
