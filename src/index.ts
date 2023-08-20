@@ -6,8 +6,10 @@ import express from "express";
 import mysqlSession from "express-mysql-session";
 import signale from "signale";
 import fetch from "node-fetch";
+import { v4 } from "uuid";
 const fs = require("fs-extra");
 const { OAuth2Client } = require("google-auth-library");
+
 import { URLATEConfig } from "./types/config.schema";
 import {
   createSuccessResponse,
@@ -64,6 +66,11 @@ async function gidVerify(token: String, clientId: String) {
   });
   return ticket.getPayload();
 }
+
+const uuid = () => {
+  const tokens = v4().split("-");
+  return tokens[2] + tokens[1] + tokens[0] + tokens[3] + tokens[4];
+};
 
 app.get("/auth/status", async (req, res) => {
   if (!req.session.userid) {
@@ -151,6 +158,19 @@ app.post("/auth/join", async (req, res) => {
       skins: '["Default"]',
       tutorial: 3,
       picture: req.session.picture,
+      background: "https://urlate-cdn.coupy.dev/albums/100/urlate.webp",
+      alias: 0,
+      rating: 0,
+      rankHistory: "[]",
+      banner: "[]",
+      recentPlay: "[]",
+      scoreSum: "0",
+      accuracy: "0",
+      playtime: 0,
+      "1thNum": 0,
+      ap: 0,
+      fc: 0,
+      clear: 0,
     });
     delete req.session.tempName;
     req.session.save(() => {
@@ -224,6 +244,40 @@ app.post("/user", async (req, res) => {
       .status(400)
       .json(
         createErrorResponse("failed", "Failed to Load", "Failed to load data.")
+      );
+    return;
+  }
+
+  res.status(200).json({ result: "success", user: results[0] });
+});
+
+app.get("/profile/:uid", async (req, res) => {
+  const results = await knex("users")
+    .select(
+      "nickname",
+      "skins",
+      "picture",
+      "background",
+      "alias",
+      "rating",
+      "rankHistory",
+      "banner",
+      "rank",
+      "recentPlay",
+      "scoreSum",
+      "accuracy",
+      "playtime",
+      "1thNum",
+      "ap",
+      "fc",
+      "clear"
+    )
+    .where("userid", req.params.uid);
+  if (!results.length) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse("failed", "Failed to Load", "Cannot find user.")
       );
     return;
   }
@@ -478,6 +532,7 @@ app.put("/playRecord", async (req, res) => {
           maxcombo: req.body.maxCombo,
           medal,
           difficulty: req.body.difficulty,
+          judge: `${perfect} / ${great} / ${good} / ${bad} / ${miss} / ${bullet}`,
         }),
         headers: {
           "Content-Type": "application/json",
@@ -580,6 +635,8 @@ app.put("/record", async (req, res) => {
       difficulty: req.body.difficulty,
       date: new Date(),
       isBest: isBest,
+      index: uuid(),
+      judge: req.body.judge,
     });
   } catch (e: any) {
     res
