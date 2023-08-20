@@ -647,9 +647,28 @@ app.put("/record", async (req, res) => {
   res.status(200).json(createSuccessResponse("success"));
 });
 
+app.get("/record/:index", async (req, res) => {
+  const results = await knex("trackRecords")
+    .select(
+      "rank",
+      "record",
+      "maxcombo",
+      "medal",
+      "difficulty",
+      "date",
+      "judge"
+    )
+    .where("index", req.params.index);
+  if (!results.length) {
+    res.status(200).json(createSuccessResponse("empty"));
+    return;
+  }
+  res.status(200).json({ result: "success", results });
+});
+
 app.get("/record/:track/:name", async (req, res) => {
   const results = await knex("trackRecords")
-    .select("rank", "record", "maxcombo", "medal", "difficulty")
+    .select("rank", "record", "maxcombo", "medal", "difficulty", "date")
     .where("nickname", req.params.name)
     .where("name", req.params.track)
     .where("isBest", 1)
