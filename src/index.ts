@@ -533,6 +533,7 @@ app.put("/playRecord", async (req, res) => {
           medal,
           difficulty: req.body.difficulty,
           judge: `${perfect} / ${great} / ${good} / ${bad} / ${miss} / ${bullet}`,
+          accuracy: req.body.accuracy,
         }),
         headers: {
           "Content-Type": "application/json",
@@ -637,6 +638,7 @@ app.put("/record", async (req, res) => {
       isBest: isBest,
       index: uuid(),
       judge: req.body.judge,
+      accuracy: req.body.accuracy,
     });
   } catch (e: any) {
     res
@@ -650,13 +652,16 @@ app.put("/record", async (req, res) => {
 app.get("/record/:index", async (req, res) => {
   const results = await knex("trackRecords")
     .select(
+      "name",
       "rank",
       "record",
       "maxcombo",
       "medal",
       "difficulty",
       "date",
-      "judge"
+      "judge",
+      "isBest",
+      "accuracy"
     )
     .where("index", req.params.index);
   if (!results.length) {
