@@ -538,7 +538,7 @@ app.put("/playRecord", async (req, res) => {
         }/${new Date().toString()}.json`,
         req.body.record
       );
-      fetch(`${config.project.api}/record`, {
+      fetch(`http://localhost:${config.project.port}/record`, {
         method: "PUT",
         body: JSON.stringify({
           secret: config.project.secretKey,
