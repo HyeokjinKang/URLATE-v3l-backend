@@ -167,7 +167,7 @@ app.post("/auth/join", async (req, res) => {
       scoreSum: "0",
       accuracy: "0",
       playtime: 0,
-      "1thNum": 0,
+      "1stNum": 0,
       ap: 0,
       fc: 0,
       clear: 0,
@@ -267,7 +267,7 @@ app.get("/profile/:uid", async (req, res) => {
       "scoreSum",
       "accuracy",
       "playtime",
-      "1thNum",
+      "1stNum",
       "ap",
       "fc",
       "clear"
