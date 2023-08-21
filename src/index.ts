@@ -709,9 +709,7 @@ app.put("/record", async (req, res) => {
       .where("nickname", req.body.nickname)
       .update({
         rating: Number(user[0].rating) + (isBest ? rating : 0),
-        scoreSum: (
-          BigInt(user[0].scoreSum) + BigInt(req.body.record)
-        ).toString(),
+        scoreSum: Number(user[0].scoreSum) + Number(req.body.record),
         accuracy:
           (Number(user[0].accuracy) * Number(user[0].playtime) +
             Number(req.body.accuracy)) /
