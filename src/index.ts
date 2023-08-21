@@ -720,7 +720,7 @@ app.put("/record", async (req, res) => {
           ) / 100
         ).toFixed(2),
         recentPlay: JSON.stringify(
-          [index, ...JSON.parse(user[0].recentPlay)].slice(0, 10)
+          [...JSON.parse(user[0].recentPlay), index].slice(-10)
         ),
         playtime: Number(user[0].playtime) + 1,
         ap: Number(user[0].ap) + ap,
