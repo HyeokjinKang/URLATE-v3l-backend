@@ -711,10 +711,14 @@ app.put("/record", async (req, res) => {
       .update({
         rating: Number(user[0].rating) + (isBest ? rating : 0),
         scoreSum: Number(user[0].scoreSum) + Number(req.body.record),
-        accuracy:
-          (Number(user[0].accuracy) * Number(user[0].playtime) +
-            Number(req.body.accuracy)) /
-          (Number(user[0].playtime) + 1),
+        accuracy: (
+          Math.round(
+            ((Number(user[0].accuracy) * Number(user[0].playtime) +
+              Number(req.body.accuracy)) *
+              100) /
+              (Number(user[0].playtime) + 1)
+          ) / 100
+        ).toFixed(2),
         recentPlay: JSON.stringify(
           [index, ...JSON.parse(user[0].recentPlay)].slice(0, 10)
         ),
