@@ -7,6 +7,7 @@ import mysqlSession from "express-mysql-session";
 import signale from "signale";
 import fetch from "node-fetch";
 import { v4 } from "uuid";
+import schedule from "node-schedule";
 const fs = require("fs-extra");
 const { OAuth2Client } = require("google-auth-library");
 
@@ -71,6 +72,20 @@ const uuid = () => {
   const tokens = v4().split("-");
   return tokens[2] + tokens[1] + tokens[0] + tokens[3] + tokens[4];
 };
+
+const updateRankHistory = schedule.scheduleJob("0 * * *", async () => {
+  signale.pending("Updating rank history...");
+  const users = await knex("users")
+    .select("userid", "rankHistory")
+    .orderBy("rating", "desc");
+  for (let i = 0; i < users.length; i++) {
+    const history = [i + 1, ...JSON.parse(users[i].rankHistory)];
+    await knex("users")
+      .update({ rankHistory: JSON.stringify(history.slice(0, 19)) })
+      .where("userid", users[i].userid);
+  }
+  signale.success("Rank history updated.");
+});
 
 app.get("/auth/status", async (req, res) => {
   if (!req.session.userid) {
