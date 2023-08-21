@@ -702,7 +702,8 @@ app.put("/record", async (req, res) => {
         .where("name", req.body.name)
         .where("isBest", 1)
         .where("difficulty", req.body.difficultySelection)
-        .orderBy("record", "desc");
+        .orderBy("record", "desc")
+        .limit(1);
       if (allRecords[0].nickname == req.body.nickname) isBest = 2;
     }
     await knex("users")
