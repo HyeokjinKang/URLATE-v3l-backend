@@ -277,7 +277,6 @@ app.get("/profile/:uid", async (req, res) => {
       "rating",
       "rankHistory",
       "banner",
-      "rank",
       "recentPlay",
       "scoreSum",
       "accuracy",
@@ -288,6 +287,9 @@ app.get("/profile/:uid", async (req, res) => {
       "clear"
     )
     .where("userid", req.params.uid);
+  const users = await knex("users").orderBy("rating", "desc");
+  const rank =
+    users.findIndex((user: any) => user.userid === req.params.uid) + 1;
   if (!results.length) {
     res
       .status(400)
@@ -297,7 +299,7 @@ app.get("/profile/:uid", async (req, res) => {
     return;
   }
 
-  res.status(200).json({ result: "success", user: results[0] });
+  res.status(200).json({ result: "success", user: results[0], rank });
 });
 
 app.get("/tracks", async (req, res) => {
