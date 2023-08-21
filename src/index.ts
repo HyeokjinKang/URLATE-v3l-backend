@@ -548,9 +548,11 @@ app.put("/playRecord", async (req, res) => {
           record: req.body.score,
           maxcombo: req.body.maxCombo,
           medal,
+          difficultySelection: req.body.difficultySelection,
           difficulty: req.body.difficulty,
           judge: `${perfect} / ${great} / ${good} / ${bad} / ${miss} / ${bullet}`,
           accuracy: req.body.accuracy,
+          uid: req.session.userid,
         }),
         headers: {
           "Content-Type": "application/json",
@@ -626,11 +628,11 @@ app.put("/record", async (req, res) => {
   try {
     let isBest = 0;
     const result = await knex("trackRecords")
-      .select("record")
+      .select("record", "medal")
       .where("nickname", req.body.nickname)
       .where("name", req.body.name)
       .where("isBest", 1)
-      .where("difficulty", req.body.difficulty);
+      .where("difficulty", req.body.difficultySelection);
     if (result.length && result[0].record < req.body.record) {
       isBest = 1;
       await knex("trackRecords")
@@ -640,9 +642,10 @@ app.put("/record", async (req, res) => {
         .where("nickname", req.body.nickname)
         .where("name", req.body.name)
         .where("isBest", 1)
-        .where("difficulty", req.body.difficulty);
+        .where("difficulty", req.body.difficultySelection);
     }
     if (!result.length) isBest = 1;
+    const index = uuid();
     await knex("trackRecords").insert({
       name: req.body.name,
       nickname: req.body.nickname,
@@ -650,14 +653,80 @@ app.put("/record", async (req, res) => {
       record: req.body.record,
       maxcombo: req.body.maxcombo,
       medal: req.body.medal,
-      difficulty: req.body.difficulty,
+      difficulty: req.body.difficultySelection,
       date: new Date(),
-      isBest: isBest,
-      index: uuid(),
+      isBest,
+      index,
       judge: req.body.judge,
       accuracy: req.body.accuracy,
     });
+    const user = await knex("users")
+      .where("nickname", req.body.nickname)
+      .select(
+        "rating",
+        "scoreSum",
+        "accuracy",
+        "recentPlay",
+        "playtime",
+        "1stNum",
+        "ap",
+        "fc",
+        "clear"
+      );
+    const rating = Number(
+      Math.round(
+        (Number(req.body.record) / 100000000) *
+          Number(req.body.accuracy) *
+          Number(req.body.difficulty)
+      )
+    );
+    let ap = 0,
+      fc = 0,
+      clear = 0,
+      medal = Number(req.body.medal);
+    if (isBest) {
+      if (result.length) medal = medal - result[0].medal;
+      if (medal >= 4) {
+        ap = 1;
+        medal -= 4;
+      }
+      if (medal >= 2) {
+        fc = 1;
+        medal -= 2;
+      }
+      if (medal >= 1) {
+        clear = 1;
+      }
+      const allRecords = await knex("trackRecords")
+        .select("nickname")
+        .where("name", req.body.name)
+        .where("isBest", 1)
+        .where("difficulty", req.body.difficultySelection)
+        .orderBy("record", "desc");
+      if (allRecords[0].nickname == req.body.nickname) isBest = 2;
+    }
+    await knex("users")
+      .where("nickname", req.body.nickname)
+      .update({
+        rating: Number(user[0].rating) + (isBest ? rating : 0),
+        scoreSum: (
+          BigInt(user[0].scoreSum) + BigInt(req.body.record)
+        ).toString(),
+        accuracy:
+          (Number(user[0].accuracy) * Number(user[0].playtime) +
+            Number(req.body.accuracy)) /
+          (Number(user[0].playtime) + 1),
+        recentPlay: JSON.stringify(
+          [index, ...JSON.parse(user[0].recentPlay)].slice(0, 10)
+        ),
+        playtime: Number(user[0].playtime) + 1,
+        ap: Number(user[0].ap) + ap,
+        fc: Number(user[0].fc) + fc,
+        clear: Number(user[0].clear) + clear,
+        "1stNum": Number(user[0]["1stNum"]) + (isBest == 2 ? 1 : 0),
+      });
   } catch (e: any) {
+    console.error(e);
     res
       .status(400)
       .json(createErrorResponse("failed", "Error occured while updating", e));
