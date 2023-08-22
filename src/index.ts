@@ -80,9 +80,9 @@ const updateRankHistory = schedule.scheduleJob("0 0 * * *", async () => {
     .select("userid", "rankHistory")
     .orderBy("rating", "desc");
   for (let i = 0; i < users.length; i++) {
-    const history = [i + 1, ...JSON.parse(users[i].rankHistory)];
+    const history = [...JSON.parse(users[i].rankHistory), i + 1];
     await knex("users")
-      .update({ rankHistory: JSON.stringify(history.slice(0, 19)) })
+      .update({ rankHistory: JSON.stringify(history.slice(-19)) })
       .where("userid", users[i].userid);
   }
   signale.info(new Date());
