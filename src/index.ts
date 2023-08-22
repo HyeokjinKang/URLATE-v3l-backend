@@ -74,7 +74,8 @@ const uuid = () => {
 };
 
 const updateRankHistory = schedule.scheduleJob("0 0 * * *", async () => {
-  signale.pending(`${new Date()}: Updating rank history...`);
+  signale.info(new Date());
+  signale.pending(`Updating rank history...`);
   const users = await knex("users")
     .select("userid", "rankHistory")
     .orderBy("rating", "desc");
@@ -84,7 +85,8 @@ const updateRankHistory = schedule.scheduleJob("0 0 * * *", async () => {
       .update({ rankHistory: JSON.stringify(history.slice(0, 19)) })
       .where("userid", users[i].userid);
   }
-  signale.success(`${new Date()}: Rank history updated.`);
+  signale.info(new Date());
+  signale.success(`Rank history updated.`);
 });
 
 app.get("/auth/status", async (req, res) => {
@@ -1033,7 +1035,6 @@ app.get("/CPLtrackInfo/:name", async (req, res) => {
 });
 
 app.listen(config.project.port, () => {
-  signale.success(
-    `${new Date()}: API Server running at port ${config.project.port}.`
-  );
+  signale.info(new Date());
+  signale.success(`API Server running at port ${config.project.port}.`);
 });
