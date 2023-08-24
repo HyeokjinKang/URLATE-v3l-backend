@@ -648,6 +648,13 @@ app.put("/record", async (req, res) => {
     }
     if (!result.length) isBest = 1;
     const index = uuid();
+    const rating = Number(
+      Math.round(
+        (Number(req.body.record) / 100000000) *
+          Number(req.body.accuracy) *
+          Number(req.body.difficulty)
+      )
+    );
     await knex("trackRecords").insert({
       name: req.body.name,
       nickname: req.body.nickname,
@@ -661,6 +668,7 @@ app.put("/record", async (req, res) => {
       index,
       judge: req.body.judge,
       accuracy: req.body.accuracy,
+      rating,
     });
     const user = await knex("users")
       .where("nickname", req.body.nickname)
@@ -675,13 +683,6 @@ app.put("/record", async (req, res) => {
         "fc",
         "clear"
       );
-    const rating = Number(
-      Math.round(
-        (Number(req.body.record) / 100000000) *
-          Number(req.body.accuracy) *
-          Number(req.body.difficulty)
-      )
-    );
     let ap = 0,
       fc = 0,
       clear = 0,
@@ -752,7 +753,8 @@ app.get("/record/:index", async (req, res) => {
       "date",
       "judge",
       "isBest",
-      "accuracy"
+      "accuracy",
+      "rating"
     )
     .where("index", req.params.index);
   if (!results.length) {
@@ -774,6 +776,28 @@ app.get("/record/:track/:name", async (req, res) => {
     return;
   }
   res.status(200).json({ result: "success", results });
+});
+
+app.get("/bestRecords/:nickname", async (req, res) => {
+  const results = await knex("trackRecords")
+    .select(
+      "name",
+      "rank",
+      "record",
+      "maxcombo",
+      "medal",
+      "difficulty",
+      "date",
+      "judge",
+      "isBest",
+      "accuracy",
+      "rating"
+    )
+    .where("nickname", req.params.nickname)
+    .where("isBest", 1)
+    .orderBy("difficulty", "desc")
+    .orderBy("rating", "desc");
+  res.status(200).json({ result: "success", results: results.slice(0, 10) });
 });
 
 app.get(
