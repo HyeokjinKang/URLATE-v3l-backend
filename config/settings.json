@@ -40,6 +40,6 @@
   },
   "editor": {
     "denyCursor": true,
-    "denySkin": true
+    "denySkin": false
   }
 }
