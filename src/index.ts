@@ -188,6 +188,7 @@ app.post("/auth/join", async (req, res) => {
       ap: 0,
       fc: 0,
       clear: 0,
+      ownedAlias: "[0,1,2,3,4,5,6,7,8,9]",
     });
     delete req.session.tempName;
     req.session.save(() => {
@@ -286,7 +287,8 @@ app.get("/profile/:uid", async (req, res) => {
       "1stNum",
       "ap",
       "fc",
-      "clear"
+      "clear",
+      "ownedAlias"
     )
     .where("userid", req.params.uid);
   const users = await knex("users").orderBy("rating", "desc");
@@ -385,6 +387,46 @@ app.put("/settings", async (req, res) => {
     await knex("users")
       .update({ settings: JSON.stringify(req.body.settings) })
       .where("userid", req.session.userid);
+  } catch (e: any) {
+    res
+      .status(400)
+      .json(createErrorResponse("failed", "Error occured while updating", e));
+    return;
+  }
+  res.status(200).json(createSuccessResponse("success"));
+});
+
+app.put("/profile/:element", async (req, res) => {
+  if (!req.session.userid) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "UserID Required",
+          "UserID is required for this task."
+        )
+      );
+    return;
+  }
+  try {
+    switch (req.params.element) {
+      case "alias":
+        await knex("users")
+          .update({ alias: req.body.value })
+          .where("userid", req.session.userid);
+        break;
+      case "background":
+        await knex("users")
+          .update({ background: req.body.value })
+          .where("userid", req.session.userid);
+        break;
+      case "picture":
+        await knex("users")
+          .update({ picture: req.body.value })
+          .where("userid", req.session.userid);
+        break;
+    }
   } catch (e: any) {
     res
       .status(400)
