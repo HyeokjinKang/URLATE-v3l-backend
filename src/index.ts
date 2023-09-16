@@ -958,6 +958,22 @@ app.put("/coupon", async (req, res) => {
   res.status(200).json(createSuccessResponse("success"));
 });
 
+app.get("/ranking/:sort/:limit", async (req, res) => {
+  let results = [];
+  try {
+    results = await knex("users")
+      .select("nickname", "rating", "picture", "userid", "accuracy", "scoreSum")
+      .orderBy("rating", req.params.sort)
+      .limit(req.params.limit);
+  } catch (e: any) {
+    res
+      .status(400)
+      .json(createErrorResponse("failed", "Error occured while loading", e));
+    return;
+  }
+  res.status(200).json({ result: "success", results });
+});
+
 app.get("/auth/logout", (req, res) => {
   delete req.session.userid;
   delete req.session.tempName;
