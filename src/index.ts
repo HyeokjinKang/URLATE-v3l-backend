@@ -699,7 +699,7 @@ app.put("/record", async (req, res) => {
     );
     let ratingDiff = 0;
     const ratingBest = await knex("trackRecords")
-      .select("rating")
+      .select("rating", "index")
       .where("nickname", req.body.nickname)
       .where("name", req.body.name)
       .where("difficulty", req.body.difficultySelection)
@@ -707,7 +707,14 @@ app.put("/record", async (req, res) => {
       .limit(1);
     if (ratingBest.length) {
       if (Number(ratingBest[0].rating) > rating) rating = 0;
-      else ratingDiff = rating - Number(ratingBest[0].rating);
+      else {
+        await knex("trackRecords")
+          .update({
+            rating: 0,
+          })
+          .where("index", ratingBest[0].index);
+        ratingDiff = rating - Number(ratingBest[0].rating);
+      }
     }
     await knex("trackRecords").insert({
       name: req.body.name,
