@@ -690,13 +690,25 @@ app.put("/record", async (req, res) => {
     }
     if (!result.length) isBest = 1;
     const index = uuid();
-    const rating = Number(
+    let rating = Number(
       Math.round(
         (Number(req.body.record) / 100000000) *
           Number(req.body.accuracy) *
           Number(req.body.difficulty)
       )
     );
+    let ratingDiff = 0;
+    const ratingBest = await knex("trackRecords")
+      .select("rating")
+      .where("nickname", req.body.nickname)
+      .where("name", req.body.name)
+      .where("difficulty", req.body.difficultySelection)
+      .sort("rating", "desc")
+      .limit(1);
+    if (ratingBest.length) {
+      if (Number(ratingBest[0].rating) > rating) rating = 0;
+      else ratingDiff = rating - Number(ratingBest[0].rating);
+    }
     await knex("trackRecords").insert({
       name: req.body.name,
       nickname: req.body.nickname,
@@ -754,7 +766,7 @@ app.put("/record", async (req, res) => {
     await knex("users")
       .where("nickname", req.body.nickname)
       .update({
-        rating: Number(user[0].rating) + (isBest ? rating : 0),
+        rating: Number(user[0].rating) + ratingDiff,
         scoreSum: Number(user[0].scoreSum) + Number(req.body.record),
         accuracy: (
           Math.round(
