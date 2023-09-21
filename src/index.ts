@@ -672,7 +672,7 @@ app.put("/record", async (req, res) => {
   try {
     let isBest = 0;
     const result = await knex("trackRecords")
-      .select("record", "medal")
+      .select("record", "medal", "index")
       .where("nickname", req.body.nickname)
       .where("name", req.body.name)
       .where("isBest", 1)
@@ -683,10 +683,7 @@ app.put("/record", async (req, res) => {
         .update({
           isBest: 0,
         })
-        .where("nickname", req.body.nickname)
-        .where("name", req.body.name)
-        .where("isBest", 1)
-        .where("difficulty", req.body.difficultySelection);
+        .where("index", result[0].index);
     }
     if (!result.length) isBest = 1;
     const index = uuid();
