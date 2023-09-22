@@ -852,7 +852,7 @@ app.get("/bestRecords/:nickname", async (req, res) => {
       "rating"
     )
     .where("nickname", req.params.nickname)
-    .where("isBest", 1)
+    .whereNot("rating", 0)
     .orderBy("difficulty", "desc")
     .orderBy("rating", "desc");
   res.status(200).json({ result: "success", results: results.slice(0, 10) });
