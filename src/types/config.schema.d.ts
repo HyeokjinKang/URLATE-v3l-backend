@@ -29,7 +29,11 @@ export interface Project {
   /**
    * 백엔드 서버가 호스트 될 URL입니다. 슬래시로 끝나면 안되는 것에 주의합니다
    */
-  api?: string;
+  api: string;
+  /**
+   * CDN 서버가 호스트 될 URL입니다. 슬래시로 끝나면 안되는 것에 주의합니다
+   */
+  cdn: string;
   /**
    * 백엔드 서버가 열릴 포트입니다.
    */

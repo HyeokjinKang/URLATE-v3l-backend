@@ -21,20 +21,26 @@
 
       "type": "object",
       "additionalProperties": false,
-      "required": ["url", "port", "secretKey"],
+      "required": ["url", "api", "cdn", "port", "secretKey"],
 
       "properties": {
         "url": {
           "type": "string",
           "format": "uri",
           "description": "현재 프론트 엔드 서버가 호스트되고 있는 URL입니다. 슬래시로 끝나면 안되는 것에 주의합니다.",
-          "examples": ["http://localhost"]
+          "examples": ["https://example.com"]
         },
         "api": {
           "type": "string",
           "format": "uri",
           "description": "백엔드 서버가 호스트 될 URL입니다. 슬래시로 끝나면 안되는 것에 주의합니다",
-          "examples": ["http://localhost"]
+          "examples": ["https://api.example.com"]
+        },
+        "cdn": {
+          "type": "string",
+          "format": "uri",
+          "description": "CDN 서버가 호스트 될 URL입니다. 슬래시로 끝나면 안되는 것에 주의합니다",
+          "examples": ["https://cdn.example.com"]
         },
         "port": {
           "type": "integer",
