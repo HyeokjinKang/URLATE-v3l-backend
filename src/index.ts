@@ -175,7 +175,7 @@ app.post("/auth/join", async (req, res) => {
       skins: '["Default"]',
       tutorial: 3,
       picture: req.session.picture,
-      background: "https://urlate-cdn.coupy.dev/albums/100/urlate.webp",
+      background: `${config.project.cdn}/albums/75/urlate.webp`,
       alias: 0,
       rating: 0,
       rankHistory: "[]",
