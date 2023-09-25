@@ -165,6 +165,8 @@ app.post("/auth/join", async (req, res) => {
   const results = await knex("users")
     .select("nickname")
     .where("nickname", req.body.displayName);
+  const aliasNum = 13;
+  const aliasArray = [...Array(aliasNum).keys()]; //[0 ~ aliasNum-1]
   if (!results[0]) {
     await knex("users").insert({
       nickname: req.body.displayName,
@@ -188,7 +190,7 @@ app.post("/auth/join", async (req, res) => {
       ap: 0,
       fc: 0,
       clear: 0,
-      ownedAlias: "[0,1,2,3,4,5,6,7,8,9]",
+      ownedAlias: JSON.stringify(aliasArray),
     });
     delete req.session.tempName;
     req.session.save(() => {
