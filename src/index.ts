@@ -1134,6 +1134,26 @@ app.get("/CPLtrackInfo/:name", async (req, res) => {
   res.status(200).json({ result: "success", info: results });
 });
 
+app.get("/notice/:lang", async (req, res) => {
+  const results = await knex("notice")
+    .select("date", `title_${req.params.lang}`, `url_${req.params.lang}`)
+    .orderBy("date", "desc")
+    .limit(1);
+  if (!results.length) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Failed to Load",
+          "Failed to load skin data."
+        )
+      );
+    return;
+  }
+  res.status(200).json({ result: "success", data: results[0] });
+});
+
 app.listen(config.project.port, () => {
   signale.info(new Date());
   signale.success(`API Server running at port ${config.project.port}.`);
