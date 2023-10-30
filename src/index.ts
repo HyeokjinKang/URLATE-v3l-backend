@@ -428,6 +428,22 @@ app.put("/profile/:element", async (req, res) => {
           .update({ picture: req.body.value })
           .where("userid", req.session.userid);
         break;
+      case "banner":
+        await knex("users")
+          .update({ banner: req.body.value })
+          .where("userid", req.session.userid);
+        break;
+      default:
+        res
+          .status(400)
+          .json(
+            createErrorResponse(
+              "failed",
+              "Error occured while updating",
+              "Undefined element name."
+            )
+          );
+        return;
     }
   } catch (e: any) {
     res
