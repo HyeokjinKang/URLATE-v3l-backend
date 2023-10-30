@@ -399,7 +399,7 @@ app.put("/settings", async (req, res) => {
 });
 
 app.put("/profile/:element", async (req, res) => {
-  if (!req.session.userid) {
+  if (!req.session.userid && (!req.body.userid || !req.body.secret)) {
     res
       .status(400)
       .json(
@@ -419,14 +419,38 @@ app.put("/profile/:element", async (req, res) => {
           .where("userid", req.session.userid);
         break;
       case "background":
+        if (req.body.secret !== config.project.secretKey) {
+          res
+            .status(400)
+            .json(
+              createErrorResponse(
+                "failed",
+                "Authorize failed",
+                "Project secret key is not vaild."
+              )
+            );
+          return;
+        }
         await knex("users")
           .update({ background: req.body.value })
-          .where("userid", req.session.userid);
+          .where("userid", req.body.userid);
         break;
       case "picture":
+        if (req.body.secret !== config.project.secretKey) {
+          res
+            .status(400)
+            .json(
+              createErrorResponse(
+                "failed",
+                "Authorize failed",
+                "Project secret key is not vaild."
+              )
+            );
+          return;
+        }
         await knex("users")
           .update({ picture: req.body.value })
-          .where("userid", req.session.userid);
+          .where("userid", req.body.userid);
         break;
       case "banner":
         await knex("users")
