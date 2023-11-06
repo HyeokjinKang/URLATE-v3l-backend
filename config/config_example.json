@@ -14,10 +14,17 @@
     "user": "USERNAME",
     "password": "PASSWORD"
   },
+  "redis": {
+    "host": "localhost",
+    "port": 6379,
+    "username": "USERNAME",
+    "password": "PASSWORD"
+  },
   "session": {
     "secret": "SESSION SECRET",
     "resave": false,
-    "saveUninitialized": false
+    "saveUninitialized": false,
+    "domain": "example.com"
   },
   "google": {
     "clientId": "GOOGLE CLIENT ID",

@@ -7,7 +7,7 @@
 
   "type": "object",
   "additionalProperties": false,
-  "required": ["$schema", "project", "database", "session", "google"],
+  "required": ["$schema", "project", "database", "redis", "session", "google"],
 
   "properties": {
     "$schema": {
@@ -66,12 +66,12 @@
         "host": {
           "type": "string",
           "format": "hostname",
-          "description": "MySQL 서버 호스트입니다. 주 데이터베이스 및 세션 저장소에 활용됩니다.",
+          "description": "MySQL 서버 호스트입니다. 주 데이터베이스로 활용됩니다.",
           "examples": ["localhost"]
         },
         "port": {
           "type": "number",
-          "description": "MySQL 세션 저장소 포트입니다.",
+          "description": "MySQL 저장소 포트입니다.",
           "minimum": 0,
           "maximum": 65535,
           "examples": [3306]
@@ -93,13 +93,47 @@
         }
       }
     },
+    "redis": {
+      "title": "Redis",
+      "description": "Redis 연결 설정입니다.",
+
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "port", "username", "password"],
+
+      "properties": {
+        "host": {
+          "type": "string",
+          "format": "hostname",
+          "description": "Redis 서버 호스트입니다. 세션 저장소에 활용됩니다.",
+          "examples": ["localhost"]
+        },
+        "port": {
+          "type": "number",
+          "description": "Redis 저장소 포트입니다.",
+          "minimum": 0,
+          "maximum": 65535,
+          "examples": [6379]
+        },
+        "username": {
+          "type": "string",
+          "description": "Redis 사용자명입니다.",
+          "examples": ["USERNAME"]
+        },
+        "password": {
+          "type": "string",
+          "description": "Redis 사용자의 비밀번호입니다.",
+          "examples": ["PASSWORD"]
+        }
+      }
+    },
     "session": {
       "title": "Session",
       "description": "세션 설정입니다.",
 
       "type": "object",
       "additionalProperties": false,
-      "required": ["secret"],
+      "required": ["secret", "resave", "saveUninitialized", "domain"],
 
       "properties": {
         "secret": {
@@ -115,6 +149,11 @@
           "type": "boolean",
           "description": "초기화하지 않은 세션일지라도 강제로 저장할지 여부입니다.\n초기화하지 않은 세션이라 함은 새로운 세션에 값을 넣지 않았을 때를 말합니다.\nfalse로 설정한다면 서버 용량 절약이나 개인정보 보호법 준수, 동시성 문제 해소 등 이점이 많습니다.\n설정하지 않는다면 true로 설정될 것이나, 미래 버전에서 바뀔 수 있습니다.",
           "examples": [false]
+        },
+        "domain": {
+          "type": "string",
+          "description": "세션 쿠키의 도메인입니다.",
+          "examples": ["example.com"]
         }
       }
     },

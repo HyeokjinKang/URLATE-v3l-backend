@@ -15,6 +15,7 @@ export interface URLATEConfig {
   $schema: string;
   project: Project;
   database: Database;
+  redis: Redis;
   session: Session;
   google: GoogleAPI;
 }
@@ -45,11 +46,11 @@ export interface Project {
  */
 export interface Database {
   /**
-   * MySQL 서버 호스트입니다. 주 데이터베이스 및 세션 저장소에 활용됩니다.
+   * MySQL 서버 호스트입니다. 주 데이터베이스로 활용됩니다.
    */
   host: string;
   /**
-   * MySQL 세션 저장소 포트입니다.
+   * MySQL 저장소 포트입니다.
    */
   port: number;
   /**
@@ -66,6 +67,27 @@ export interface Database {
   db: string;
 }
 /**
+ * Redis 연결 설정입니다.
+ */
+export interface Redis {
+  /**
+   * Redis 서버 호스트입니다. 세션 저장소에 활용됩니다.
+   */
+  host: string;
+  /**
+   * Redis 저장소 포트입니다.
+   */
+  port: number;
+  /**
+   * Redis 사용자명입니다.
+   */
+  username: string;
+  /**
+   * Redis 사용자의 비밀번호입니다.
+   */
+  password: string;
+}
+/**
  * 세션 설정입니다.
  */
 export interface Session {
@@ -79,14 +101,18 @@ export interface Session {
    * 이 값을 true로 설정하는 것은 동시성 문제를 야기할 수도 있습니다.
    * 설정하지 않는다면 true로 설정될 것이나, 미래 버전에서 바뀔 수 있습니다.
    */
-  resave?: boolean;
+  resave: boolean;
   /**
    * 초기화하지 않은 세션일지라도 강제로 저장할지 여부입니다.
    * 초기화하지 않은 세션이라 함은 새로운 세션에 값을 넣지 않았을 때를 말합니다.
    * false로 설정한다면 서버 용량 절약이나 개인정보 보호법 준수, 동시성 문제 해소 등 이점이 많습니다.
    * 설정하지 않는다면 true로 설정될 것이나, 미래 버전에서 바뀔 수 있습니다.
    */
-  saveUninitialized?: boolean;
+  saveUninitialized: boolean;
+  /**
+   * 세션 쿠키의 도메인입니다.
+   */
+  domain: string;
 }
 /**
  * Google API 설정입니다.
