@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
-import * as bodyParser from "body-parser";
-import * as session from "express-session";
 import cookieParser from "cookie-parser";
 import express from "express";
-import mysqlSession from "express-mysql-session";
+import RedisStore from "connect-redis";
+import session from "express-session";
+import { createClient } from "redis";
 import signale from "signale";
 import fetch from "node-fetch";
 import { v4 } from "uuid";
@@ -21,12 +21,24 @@ import {
 const config: URLATEConfig = require(__dirname + "/../config/config.json");
 const settingsConfig = require(__dirname + "/../config/settings.json");
 
-const MySQLStore = mysqlSession(session);
-
 const gidClient = new OAuth2Client(config.google.clientId);
 
 const app = express();
 app.locals.pretty = true;
+
+const redisClient = createClient({
+  socket: {
+    host: config.redis.host,
+    port: config.redis.port,
+  },
+  username: config.redis.username,
+  password: config.redis.password,
+});
+
+const redisStore = new RedisStore({
+  client: redisClient,
+  prefix: "urlate:",
+});
 
 const knex = require("knex")({
   client: "mysql",
@@ -39,26 +51,30 @@ const knex = require("knex")({
   pool: { min: 0, max: 7 },
 });
 
-const sessionStore = new MySQLStore({
-  host: config.database.host,
-  port: config.database.port,
-  user: config.database.user,
-  password: config.database.password,
-  database: config.database.db,
+const sessionMiddleware = session({
+  store: redisStore,
+  resave: config.session.resave,
+  saveUninitialized: config.session.saveUninitialized,
+  secret: config.session.secret,
+  name: "urlate",
+  cookie: {
+    domain: config.session.domain,
+  },
 });
 
-app.use(
-  session.default({
-    secret: config.session.secret,
-    store: sessionStore,
-    resave: config.session.resave,
-    saveUninitialized: config.session.saveUninitialized,
-  })
-);
+app.use(sessionMiddleware);
 
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+
+redisClient.on("connect", () => {
+  signale.success("Connected to redis server.");
+});
+
+redisClient.on("error", (err) => {
+  signale.error(err);
+});
 
 async function gidVerify(token: String, clientId: String) {
   const ticket = await gidClient.verifyIdToken({
@@ -1197,4 +1213,5 @@ app.get("/notice/:lang", async (req, res) => {
 app.listen(config.project.port, () => {
   signale.info(new Date());
   signale.success(`API Server running at port ${config.project.port}.`);
+  redisClient.connect();
 });
