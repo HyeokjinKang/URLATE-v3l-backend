@@ -8,8 +8,8 @@ import signale from "signale";
 import fetch from "node-fetch";
 import { v4 } from "uuid";
 import schedule from "node-schedule";
-const fs = require("fs-extra");
-const { OAuth2Client } = require("google-auth-library");
+import fs from "fs-extra";
+import { OAuth2Client } from "google-auth-library";
 
 import { URLATEConfig } from "./types/config.schema";
 import {
@@ -17,6 +17,7 @@ import {
   createErrorResponse,
   createStatusResponse,
 } from "./api-response";
+import { observer } from "./archievements";
 
 const config: URLATEConfig = require(__dirname + "/../config/config.json");
 const settingsConfig = require(__dirname + "/../config/settings.json");
@@ -76,13 +77,13 @@ redisClient.on("error", (err) => {
   signale.error(err);
 });
 
-async function gidVerify(token: String, clientId: String) {
+const gidVerify = async (token: string, clientId: string) => {
   const ticket = await gidClient.verifyIdToken({
     idToken: token,
     audience: clientId,
   });
   return ticket.getPayload();
-}
+};
 
 const uuid = () => {
   const tokens = v4().split("-");
