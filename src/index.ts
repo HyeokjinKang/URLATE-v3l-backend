@@ -17,7 +17,7 @@ import {
   createErrorResponse,
   createStatusResponse,
 } from "./api-response";
-import { observer } from "./archievements";
+import { observer } from "./achievements";
 
 const config: URLATEConfig = require(__dirname + "/../config/config.json");
 const settingsConfig = require(__dirname + "/../config/settings.json");
@@ -182,8 +182,6 @@ app.post("/auth/join", async (req, res) => {
   const results = await knex("users")
     .select("nickname")
     .where("nickname", req.body.displayName);
-  const aliasNum = 13;
-  const aliasArray = [...Array(aliasNum).keys()]; //[0 ~ aliasNum-1]
   if (!results[0]) {
     await knex("users").insert({
       nickname: req.body.displayName,
@@ -207,7 +205,8 @@ app.post("/auth/join", async (req, res) => {
       ap: 0,
       fc: 0,
       clear: 0,
-      ownedAlias: JSON.stringify(aliasArray),
+      ownedAlias: "[]",
+      achievements: "[]",
     });
     delete req.session.tempName;
     req.session.save(() => {
@@ -512,6 +511,7 @@ app.put("/tutorial", async (req, res) => {
     await knex("users")
       .update({ tutorial: 1 })
       .where("userid", req.session.userid);
+    observer(`${req.session.userid}`, "TUTORIAL_CLEAR");
   } catch (e: any) {
     res
       .status(400)
