@@ -21,7 +21,7 @@
 
       "type": "object",
       "additionalProperties": false,
-      "required": ["url", "api", "cdn", "port", "secretKey"],
+      "required": ["url", "api", "cdn", "game", "port", "secretKey"],
 
       "properties": {
         "url": {
@@ -41,6 +41,12 @@
           "format": "uri",
           "description": "CDN 서버가 호스트 될 URL입니다. 슬래시로 끝나면 안되는 것에 주의합니다",
           "examples": ["https://cdn.example.com"]
+        },
+        "game": {
+          "type": "string",
+          "format": "uri",
+          "description": "게임 서버가 호스트 될 URL입니다. 슬래시로 끝나면 안되는 것에 주의합니다",
+          "examples": ["https://game.example.com"]
         },
         "port": {
           "type": "integer",
