@@ -41,12 +41,17 @@ export const observer = async (
     .where("userid", userid);
   const index = idDB[context];
   let achievements: Set<number> = new Set(JSON.parse(userData[0].achievements));
+
+  // Skip if already achieved or not met the requirements
   if (achievements.has(index) || !isAchieved(context, data)) return;
   achievements.add(index);
   await knex("achievements").where("index", index).increment("count");
+
+  // TODO: Find more elegance way to get i18n-ed data
   const achievementsData = await knex("achievements")
     .select("title_ko", "title_en", "detail_ko", "detail_en", "rewards")
     .where("index", index);
+  // Send achievement data to game server
   await fetch(`${config.project.game}/emit/achievement`, {
     method: "POST",
     headers: {
@@ -58,6 +63,7 @@ export const observer = async (
       achievement: achievementsData[0],
     }),
   });
+  // Update user data
   await knex("users")
     .where("userid", userid)
     .update({ achievements: JSON.stringify(Array.from(achievements)) });
