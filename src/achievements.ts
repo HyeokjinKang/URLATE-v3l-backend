@@ -1,13 +1,6 @@
 import fetch from "node-fetch";
 import { URLATEConfig } from "./types/config.schema";
-
-interface idDB {
-  [key: string]: number;
-}
-
-const idDB: idDB = {
-  TUTORIAL_CLEAR: 0,
-};
+import signale from "signale";
 
 const config: URLATEConfig = require(__dirname + "/../config/config.json");
 
@@ -22,37 +15,63 @@ const knex = require("knex")({
   pool: { min: 0, max: 7 },
 });
 
-const isAchieved = (context: string, data?: object) => {
+interface Data {
+  [key: string]: string | number | undefined;
+}
+
+const idDB = {
+  TUTORIAL_CLEAR: 0,
+  ONE_MISS: 1,
+  ONE_BAD: 2,
+  ONE_GOOD: 3,
+  ONE_GREAT: 4,
+  ALL_PERFECT: 5,
+  FULL_COMBO: 6,
+  ALL_ONE: 7,
+};
+
+const achievedIndex = async (context: string, data?: Data) => {
+  let index: Array<number> = [];
   switch (context) {
     case "TUTORIAL_CLEAR":
+      index.push(idDB.TUTORIAL_CLEAR);
+      break;
       return true;
     default:
-      return false;
+      signale.debug(`Achievement context ${context} is not defined.`);
   }
+  return index;
 };
 
 export const observer = async (
   userid: string,
   context: string,
-  data?: object
+  data?: Data
 ) => {
   const userData = await knex("users")
     .select("achievements")
     .where("userid", userid);
-  const index = idDB[context];
   let achievements: Set<number> = new Set(JSON.parse(userData[0].achievements));
 
-  // Skip if already achieved or not met the requirements
-  if (achievements.has(index) || !isAchieved(context, data)) return;
-  achievements.add(index);
-  await knex("achievements").where("index", index).increment("count");
+  // Get achievement index array from data. It will be [] if there is no achievement.
+  const index: Array<number> = await achievedIndex(context, data);
+  const filteredIndex = index.filter((e) => !achievements.has(e));
+  if (!filteredIndex.length) return;
 
-  // TODO: Find more elegance way to get i18n-ed data
-  const achievementsData = await knex("achievements")
-    .select("title_ko", "title_en", "detail_ko", "detail_en", "rewards")
-    .where("index", index);
+  let achievementsList: Array<object> = [];
+  filteredIndex.forEach(async (i) => {
+    // Achieved!
+    knex("achievements").where("index", i).increment("count");
+    achievements.add(i);
+    // TODO: Find more elegance way to get i18n-ed data
+    const achievement = await knex("achievements")
+      .select("title_ko", "title_en", "detail_ko", "detail_en", "rewards")
+      .where("index", i);
+    achievementsList.push(achievement[0]);
+  });
+
   // Send achievement data to game server
-  await fetch(`${config.project.game}/emit/achievement`, {
+  fetch(`${config.project.game}/emit/achievement`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -60,11 +79,12 @@ export const observer = async (
     body: JSON.stringify({
       userid: userid,
       secret: config.project.secretKey,
-      achievement: achievementsData[0],
+      achievement: achievementsList,
     }),
   });
+
   // Update user data
-  await knex("users")
+  knex("users")
     .where("userid", userid)
     .update({ achievements: JSON.stringify(Array.from(achievements)) });
 };
