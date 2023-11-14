@@ -36,7 +36,38 @@ const achievedIndex = async (context: string, data?: Data) => {
     case "TUTORIAL_CLEAR":
       index.push(idDB.TUTORIAL_CLEAR);
       break;
-      return true;
+    case "JUDGE":
+      if (!data) {
+        signale.debug("Achievement context JUDGE needs data.");
+        break;
+      }
+      data.medal = Number(data.medal);
+      if (data.medal == 7) index.push(idDB.ALL_PERFECT);
+      if (data.medal - 2 >= 0) {
+        // FC
+        index.push(6);
+        if (data.good == 1 && data.great == 0) index.push(idDB.ONE_GOOD);
+        else if (data.good == 0 && data.great == 1) index.push(idDB.ONE_GREAT);
+      }
+      if (
+        data.miss == 1 &&
+        data.bad == 1 &&
+        data.good == 1 &&
+        data.great == 1 &&
+        data.bullet == 1
+      )
+        index.push(idDB.ALL_ONE);
+      if (data.good == 0 && data.great == 0) {
+        if (
+          ((data.miss == 1 && data.bullet == 0) ||
+            (data.miss == 0 && data.bullet == 1)) &&
+          data.bad == 0
+        )
+          index.push(idDB.ONE_MISS);
+        else if (data.miss == 0 && data.bullet == 0 && data.bad == 1)
+          index.push(idDB.ONE_BAD);
+      }
+      break;
     default:
       signale.debug(`Achievement context ${context} is not defined.`);
   }

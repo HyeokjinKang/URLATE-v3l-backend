@@ -637,6 +637,17 @@ app.put("/playRecord", async (req, res) => {
         }/${new Date().toString()}.json`,
         req.body.record
       );
+      observer(`${req.session.userid}`, "JUDGE", {
+        perfect,
+        great,
+        good,
+        bad,
+        miss,
+        bullet,
+        accuracy,
+        rank,
+        medal,
+      });
       fetch(`http://localhost:${config.project.port}/record`, {
         method: "PUT",
         body: JSON.stringify({
