@@ -625,11 +625,7 @@ app.put("/playRecord", async (req, res) => {
       medal = 0;
     }
     if (bad == 0 && miss == 0 && bullet == 0) {
-      if (medal == 0) {
-        medal = 2;
-      } else {
-        medal = 3;
-      }
+      medal += 2;
       if (bad == 0 && good == 0 && great == 0 && perfect != 0) {
         medal = 7;
       }
