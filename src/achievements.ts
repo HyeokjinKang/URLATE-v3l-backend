@@ -90,7 +90,7 @@ export const observer = async (
   if (!filteredIndex.length) return;
 
   let achievementsList: Array<object> = [];
-  filteredIndex.forEach(async (i) => {
+  for (const i of filteredIndex) {
     // Achieved!
     knex("achievements").where("index", i).increment("count");
     achievements.add(i);
@@ -99,7 +99,15 @@ export const observer = async (
       .select("title_ko", "title_en", "detail_ko", "detail_en", "rewards")
       .where("index", i);
     achievementsList.push(achievement[0]);
-  });
+  }
+
+  // Update user data
+  await knex("users")
+    .update({ achievements: JSON.stringify(Array.from(achievements)) })
+    .where("userid", userid)
+    .catch((err: Error) => {
+      signale.error(err);
+    });
 
   // Send achievement data to game server
   fetch(`${config.project.game}/emit/achievement`, {
@@ -112,10 +120,7 @@ export const observer = async (
       secret: config.project.secretKey,
       achievement: achievementsList,
     }),
+  }).catch((err) => {
+    signale.error(err);
   });
-
-  // Update user data
-  knex("users")
-    .where("userid", userid)
-    .update({ achievements: JSON.stringify(Array.from(achievements)) });
 };
