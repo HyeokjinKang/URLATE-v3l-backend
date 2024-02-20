@@ -207,6 +207,7 @@ app.post("/auth/join", async (req, res) => {
       clear: 0,
       ownedAlias: "[]",
       achievements: "[]",
+      explicit: 0,
     });
     delete req.session.tempName;
     req.session.save(() => {
@@ -240,7 +241,15 @@ app.get("/user", async (req, res) => {
   }
 
   const results = await knex("users")
-    .select("nickname", "settings", "skins", "userid", "tutorial", "picture")
+    .select(
+      "nickname",
+      "settings",
+      "skins",
+      "userid",
+      "tutorial",
+      "picture",
+      "explicit"
+    )
     .where("userid", req.session.userid);
   if (!results.length) {
     res
@@ -306,7 +315,8 @@ app.get("/profile/:uid", async (req, res) => {
       "ap",
       "fc",
       "clear",
-      "ownedAlias"
+      "ownedAlias",
+      "explicit"
     )
     .where("userid", req.params.uid);
   const users = await knex("users").orderBy("rating", "desc");
@@ -428,6 +438,10 @@ app.put("/profile/:element", async (req, res) => {
     return;
   }
   try {
+    let users = await knex("users")
+      .select("explicit")
+      .where("userid", req.body.userid);
+    let explicit = users[0].explicit;
     switch (req.params.element) {
       case "alias":
         await knex("users")
@@ -447,8 +461,10 @@ app.put("/profile/:element", async (req, res) => {
             );
           return;
         }
+        if (req.body.explicit && explicit < 2) explicit += 2;
+        else if (explicit >= 2) explicit -= 2;
         await knex("users")
-          .update({ background: req.body.value })
+          .update({ background: req.body.value, explicit })
           .where("userid", req.body.userid);
         break;
       case "picture":
@@ -464,8 +480,13 @@ app.put("/profile/:element", async (req, res) => {
             );
           return;
         }
+        let users = await knex("users")
+          .select("explicit")
+          .where("userid", req.body.userid);
+        if (req.body.explicit && explicit % 2 == 0) explicit++;
+        else if (explicit % 2 == 1) explicit--;
         await knex("users")
-          .update({ picture: req.body.value })
+          .update({ picture: req.body.value, explicit })
           .where("userid", req.body.userid);
         break;
       case "banner":
