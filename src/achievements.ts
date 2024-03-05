@@ -19,6 +19,14 @@ interface Data {
   [key: string]: string | number | undefined;
 }
 
+interface Achievement {
+  title_ko: string;
+  title_en: string;
+  detail_ko: string;
+  detail_en: string;
+  rewards: string;
+}
+
 const idDB = {
   TUTORIAL_CLEAR: 0,
   ONE_MISS: 1,
@@ -79,9 +87,7 @@ export const observer = async (
   context: string,
   data?: Data
 ) => {
-  const userData = await knex("users")
-    .select("achievements")
-    .where("userid", userid);
+  const userData = await knex("users").where("userid", userid);
   let achievements: Set<number> = new Set(JSON.parse(userData[0].achievements));
 
   // Get achievement index array from data. It will be [] if there is no achievement.
@@ -89,7 +95,7 @@ export const observer = async (
   const filteredIndex = index.filter((e) => !achievements.has(e));
   if (!filteredIndex.length) return;
 
-  let achievementsList: Array<object> = [];
+  let achievementsList: Array<Achievement> = [];
   for (const i of filteredIndex) {
     // Achieved!
     knex("achievements").where("index", i).increment("count");
@@ -101,9 +107,29 @@ export const observer = async (
     achievementsList.push(achievement[0]);
   }
 
+  // Reward
+  let ownedAlias = new Set(JSON.parse(userData[0].ownedAlias));
+  let banner = new Set(JSON.parse(userData[0].banner));
+  for (const achievement of achievementsList) {
+    const rewards = JSON.parse(achievement.rewards);
+    for (const reward of rewards) {
+      if (reward[0] == "alias") {
+        ownedAlias.add(reward[1]);
+      } else if (reward[0] == "reward") {
+        //not yet
+      } else if (reward[0] == "banner") {
+        banner.add(reward[1]);
+      }
+    }
+  }
+
   // Update user data
   await knex("users")
-    .update({ achievements: JSON.stringify(Array.from(achievements)) })
+    .update({
+      achievements: JSON.stringify(Array.from(achievements)),
+      ownedAlias: JSON.stringify(Array.from(ownedAlias)),
+      banner: JSON.stringify(Array.from(banner)),
+    })
     .where("userid", userid)
     .catch((err: Error) => {
       signale.error(err);
