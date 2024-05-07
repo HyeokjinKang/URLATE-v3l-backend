@@ -438,15 +438,14 @@ app.put("/profile/:element", async (req, res) => {
     return;
   }
   try {
-    let users = await knex("users")
-      .select("explicit")
-      .where("userid", req.body.userid);
+    let userid = req.session.userid ? req.session.userid : req.body.userid;
+    let users = await knex("users").select("explicit").where("userid", userid);
     let explicit = users[0].explicit;
     switch (req.params.element) {
       case "alias":
         await knex("users")
           .update({ alias: req.body.value })
-          .where("userid", req.session.userid);
+          .where("userid", userid);
         break;
       case "background":
         if (req.body.secret !== config.project.secretKey) {
@@ -465,7 +464,7 @@ app.put("/profile/:element", async (req, res) => {
         else if (explicit >= 2) explicit -= 2;
         await knex("users")
           .update({ background: req.body.value, explicit })
-          .where("userid", req.body.userid);
+          .where("userid", userid);
         break;
       case "picture":
         if (req.body.secret !== config.project.secretKey) {
@@ -480,19 +479,16 @@ app.put("/profile/:element", async (req, res) => {
             );
           return;
         }
-        let users = await knex("users")
-          .select("explicit")
-          .where("userid", req.body.userid);
         if (req.body.explicit && explicit % 2 == 0) explicit++;
         else if (explicit % 2 == 1) explicit--;
         await knex("users")
           .update({ picture: req.body.value, explicit })
-          .where("userid", req.body.userid);
+          .where("userid", userid);
         break;
       case "banner":
         await knex("users")
           .update({ banner: req.body.value })
-          .where("userid", req.session.userid);
+          .where("userid", userid);
         break;
       default:
         res
