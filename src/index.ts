@@ -1061,7 +1061,15 @@ app.get("/ranking/:sort/:limit", async (req, res) => {
   let results = [];
   try {
     results = await knex("users")
-      .select("nickname", "rating", "picture", "userid", "accuracy", "scoreSum")
+      .select(
+        "nickname",
+        "rating",
+        "picture",
+        "userid",
+        "accuracy",
+        "scoreSum",
+        "explicit"
+      )
       .orderBy("rating", req.params.sort)
       .limit(req.params.limit);
   } catch (e: any) {
