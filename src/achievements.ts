@@ -53,7 +53,7 @@ const achievedIndex = async (context: string, data?: Data) => {
       if (data.medal == 7) index.push(idDB.ALL_PERFECT);
       if (data.medal - 2 >= 0) {
         // FC
-        index.push(6);
+        index.push(idDB.FULL_COMBO);
         if (data.good == 1 && data.great == 0) index.push(idDB.ONE_GOOD);
         else if (data.good == 0 && data.great == 1) index.push(idDB.ONE_GREAT);
       }
