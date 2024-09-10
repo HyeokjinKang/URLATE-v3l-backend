@@ -16,7 +16,7 @@ const knex = require("knex")({
 });
 
 interface Data {
-  [key: string]: string | number | undefined;
+  [key: string]: string | number | boolean | undefined;
 }
 
 interface Achievement {
@@ -36,8 +36,16 @@ const idDB = {
   ALL_PERFECT: 5,
   FULL_COMBO: 6,
   ALL_ONE: 7,
+  EZPZ: 8,
+  MID_GAP: 9,
+  ALL_HARD: 10,
+  TOP_100: 11,
+  TOP_50: 12,
+  TOP_10: 13,
+  TOP_1: 14,
 };
 
+//TODO: EZPZ, 미드차이, 이건 좀 무섭네요
 const achievedIndex = async (context: string, data?: Data) => {
   let index: Array<number> = [];
   switch (context) {
@@ -76,8 +84,33 @@ const achievedIndex = async (context: string, data?: Data) => {
           index.push(idDB.ONE_BAD);
       }
       break;
+    case "RANK":
+      if (!data) {
+        signale.debug("Achievement context RANK needs data.");
+        break;
+      }
+      if (data.rank1) index.push(idDB.TOP_1);
+      else if (data.rank10) index.push(idDB.TOP_10);
+      else if (data.rank50) index.push(idDB.TOP_50);
+      else if (data.rank100) index.push(idDB.TOP_100);
+      break;
     default:
       signale.debug(`Achievement context ${context} is not defined.`);
+  }
+  return index;
+};
+
+const initializeIndex = async (context: string, data?: Data) => {
+  let index: Array<number> = [];
+  switch (context) {
+    case "RANK":
+      index.push(idDB.TOP_1);
+      index.push(idDB.TOP_10);
+      index.push(idDB.TOP_50);
+      index.push(idDB.TOP_100);
+      break;
+    default:
+      signale.debug(`Initialize context ${context} is not defined.`);
   }
   return index;
 };
@@ -88,10 +121,15 @@ export const observer = async (
   data?: Data
 ) => {
   const userData = await knex("users").where("userid", userid);
-  let achievements: Set<number> = new Set(JSON.parse(userData[0].achievements));
+  const rawAchievements: number[] = JSON.parse(userData[0].achievements);
+  const filter = await initializeIndex(context, data);
+  const filterSet = new Set(filter);
+  const achievements = new Set(
+    rawAchievements.filter((e) => !filterSet.has(e))
+  );
 
   // Get achievement index array from data. It will be [] if there is no achievement.
-  const index: Array<number> = await achievedIndex(context, data);
+  const index: number[] = await achievedIndex(context, data);
   const filteredIndex = index.filter((e) => !achievements.has(e));
   if (!filteredIndex.length) return;
 
@@ -100,7 +138,7 @@ export const observer = async (
     // Achieved!
     knex("achievements").where("index", i).increment("count");
     achievements.add(i);
-    // TODO: Find more elegance way to get i18n-ed data
+    // TODO: Find more elegant way to get i18n-ed data
     const achievement = await knex("achievements")
       .select("title_ko", "title_en", "detail_ko", "detail_en", "rewards")
       .where("index", i);

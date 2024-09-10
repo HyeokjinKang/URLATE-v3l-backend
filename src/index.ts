@@ -101,6 +101,28 @@ const updateRankHistory = schedule.scheduleJob("0 0 * * *", async () => {
     await knex("users")
       .update({ rankHistory: JSON.stringify(history.slice(-19)) })
       .where("userid", users[i].userid);
+    let rank100 = false,
+      rank50 = false,
+      rank10 = false,
+      rank1 = false;
+    if (i < 100) {
+      rank100 = true;
+      if (i < 50) {
+        rank50 = true;
+        if (i < 10) {
+          rank10 = true;
+          if (i < 1) {
+            rank1 = true;
+          }
+        }
+      }
+    }
+    observer(`${users[i].userid}`, "RANK", {
+      rank100,
+      rank50,
+      rank10,
+      rank1,
+    });
   }
   signale.info(new Date());
   signale.success(`Rank history updated.`);
