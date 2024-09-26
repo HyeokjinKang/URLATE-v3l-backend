@@ -90,9 +90,9 @@ const achievedIndex = async (context: string, data?: Data) => {
         break;
       }
       if (data.rank1) index.push(idDB.TOP_1);
-      else if (data.rank10) index.push(idDB.TOP_10);
-      else if (data.rank50) index.push(idDB.TOP_50);
-      else if (data.rank100) index.push(idDB.TOP_100);
+      if (data.rank10) index.push(idDB.TOP_10);
+      if (data.rank50) index.push(idDB.TOP_50);
+      if (data.rank100) index.push(idDB.TOP_100);
       break;
     default:
       signale.debug(`Achievement context ${context} is not defined.`);
@@ -127,22 +127,22 @@ export const observer = async (
 
   // Reward
   let ownedAlias = new Set(JSON.parse(userData[0].ownedAlias));
+  let banner = new Set(JSON.parse(userData[0].banner));
   if (context == "RANK") {
-    // Rank 관련 alias 초기화 (8~11)
+    // Rank 관련 alias는 8~11번입니다.
     ownedAlias.delete("8");
     ownedAlias.delete("9");
     ownedAlias.delete("10");
     ownedAlias.delete("11");
-    if (index.includes(idDB.TOP_100)) ownedAlias.add("8");
-    else if (index.includes(idDB.TOP_50)) ownedAlias.add("9");
+    if (index.includes(idDB.TOP_1)) ownedAlias.add("11");
     else if (index.includes(idDB.TOP_10)) ownedAlias.add("10");
-    else if (index.includes(idDB.TOP_1)) ownedAlias.add("11");
+    else if (index.includes(idDB.TOP_50)) ownedAlias.add("9");
+    else if (index.includes(idDB.TOP_100)) ownedAlias.add("8");
   }
-  let banner = new Set(JSON.parse(userData[0].banner));
   for (const achievement of achievementsList) {
     const rewards = JSON.parse(achievement.rewards);
     for (const reward of rewards) {
-      if (reward[0] == "alias") {
+      if (reward[0] == "alias" && context != "RANK") {
         ownedAlias.add(reward[1]);
       } else if (reward[0] == "reward") {
         //not yet
