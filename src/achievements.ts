@@ -128,6 +128,7 @@ export const observer = async (
   // Reward
   let ownedAlias = new Set(JSON.parse(userData[0].ownedAlias));
   let banner = new Set(JSON.parse(userData[0].banner));
+  let selectedAlias = userData[0].alias;
   if (context == "RANK") {
     // Rank 관련 alias는 8~11번입니다.
     ownedAlias.delete("8");
@@ -138,6 +139,9 @@ export const observer = async (
     else if (index.includes(idDB.TOP_10)) ownedAlias.add("10");
     else if (index.includes(idDB.TOP_50)) ownedAlias.add("9");
     else if (index.includes(idDB.TOP_100)) ownedAlias.add("8");
+    if (!index.includes(selectedAlias)) {
+      selectedAlias = Array.from(ownedAlias).pop();
+    }
   }
   for (const achievement of achievementsList) {
     const rewards = JSON.parse(achievement.rewards);
@@ -158,6 +162,7 @@ export const observer = async (
       achievements: JSON.stringify(Array.from(achievements)),
       ownedAlias: JSON.stringify(Array.from(ownedAlias)),
       banner: JSON.stringify(Array.from(banner)),
+      alias: selectedAlias,
     })
     .where("userid", userid)
     .catch((err: Error) => {
