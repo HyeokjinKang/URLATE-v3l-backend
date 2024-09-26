@@ -100,33 +100,13 @@ const achievedIndex = async (context: string, data?: Data) => {
   return index;
 };
 
-const initializeIndex = async (context: string, data?: Data) => {
-  let index: Array<number> = [];
-  switch (context) {
-    case "RANK":
-      index.push(idDB.TOP_1);
-      index.push(idDB.TOP_10);
-      index.push(idDB.TOP_50);
-      index.push(idDB.TOP_100);
-      break;
-    default:
-      signale.debug(`Initialize context ${context} is not defined.`);
-  }
-  return index;
-};
-
 export const observer = async (
   userid: string,
   context: string,
   data?: Data
 ) => {
   const userData = await knex("users").where("userid", userid);
-  const rawAchievements: number[] = JSON.parse(userData[0].achievements);
-  const filter = await initializeIndex(context, data);
-  const filterSet = new Set(filter);
-  const achievements = new Set(
-    rawAchievements.filter((e) => !filterSet.has(e))
-  );
+  const achievements = new Set(JSON.parse(userData[0].achievements));
 
   // Get achievement index array from data. It will be [] if there is no achievement.
   const index: number[] = await achievedIndex(context, data);
@@ -147,6 +127,17 @@ export const observer = async (
 
   // Reward
   let ownedAlias = new Set(JSON.parse(userData[0].ownedAlias));
+  if (context == "RANK") {
+    // Rank 관련 alias 초기화 (8~11)
+    ownedAlias.delete("8");
+    ownedAlias.delete("9");
+    ownedAlias.delete("10");
+    ownedAlias.delete("11");
+    if (index.includes(idDB.TOP_100)) ownedAlias.add("8");
+    else if (index.includes(idDB.TOP_50)) ownedAlias.add("9");
+    else if (index.includes(idDB.TOP_10)) ownedAlias.add("10");
+    else if (index.includes(idDB.TOP_1)) ownedAlias.add("11");
+  }
   let banner = new Set(JSON.parse(userData[0].banner));
   for (const achievement of achievementsList) {
     const rewards = JSON.parse(achievement.rewards);
