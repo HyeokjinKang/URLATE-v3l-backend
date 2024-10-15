@@ -135,10 +135,10 @@ export const observer = async (
     ownedAlias.delete("9");
     ownedAlias.delete("10");
     ownedAlias.delete("11");
-    if (index.includes(idDB.TOP_1)) ownedAlias.add("11");
-    else if (index.includes(idDB.TOP_10)) ownedAlias.add("10");
-    else if (index.includes(idDB.TOP_50)) ownedAlias.add("9");
-    else if (index.includes(idDB.TOP_100)) ownedAlias.add("8");
+    if (index.includes(idDB.TOP_1)) ownedAlias.add(11);
+    else if (index.includes(idDB.TOP_10)) ownedAlias.add(10);
+    else if (index.includes(idDB.TOP_50)) ownedAlias.add(9);
+    else if (index.includes(idDB.TOP_100)) ownedAlias.add(8);
     if (!index.includes(selectedAlias)) {
       selectedAlias = Array.from(ownedAlias).pop();
     }
