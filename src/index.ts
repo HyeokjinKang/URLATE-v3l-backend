@@ -356,6 +356,22 @@ app.get("/profile/:uid", async (req, res) => {
   res.status(200).json({ result: "success", user: results[0], rank });
 });
 
+app.get("/profilePic/:username", async (req, res) => {
+  const results = await knex("users")
+    .select("picture")
+    .where("nickname", req.params.username);
+  if (!results.length) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse("failed", "Failed to Load", "Cannot find user.")
+      );
+    return;
+  }
+
+  res.status(200).json({ result: "success", picture: results[0].picture });
+});
+
 app.get("/tracks", async (req, res) => {
   const results = await knex("tracks").select(
     "name",
