@@ -821,7 +821,7 @@ app.put("/record", async (req, res) => {
       .where("nickname", req.body.nickname)
       .where("name", req.body.name)
       .where("difficulty", req.body.difficultySelection)
-      .sort("rating", "desc")
+      .orderBy("rating", "desc")
       .limit(1);
     if (ratingBest.length) {
       if (Number(ratingBest[0].rating) > rating) rating = 0;
