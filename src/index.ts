@@ -815,7 +815,7 @@ app.put("/record", async (req, res) => {
           Number(req.body.difficulty)
       )
     );
-    let ratingDiff = 0;
+    let ratingDiff = rating;
     const ratingBest = await knex("trackRecords")
       .select("rating", "index")
       .where("nickname", req.body.nickname)
