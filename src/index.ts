@@ -90,7 +90,7 @@ const uuid = () => {
   return tokens[2] + tokens[1] + tokens[0] + tokens[3] + tokens[4];
 };
 
-const updateRankHistory = schedule.scheduleJob("0 0 * * *", async () => {
+const updateRankHistory = schedule.scheduleJob("0 * * * *", async () => {
   signale.info(new Date());
   signale.pending(`Updating rank history...`);
   const users = await knex("users")
