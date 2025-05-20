@@ -110,7 +110,10 @@ export const observer = async (
 
   // Get achievement index array from data. It will be [] if there is no achievement.
   const index: number[] = await achievedIndex(context, data);
-  const filteredIndex = index.filter((e) => !achievements.has(e));
+  const filteredIndex = index.filter((e) => {
+    if (context == "RANK") return true;
+    return !achievements.has(e);
+  });
   if (!filteredIndex.length) return;
 
   let achievementsList: Array<Achievement> = [];
@@ -139,7 +142,7 @@ export const observer = async (
     else if (index.includes(idDB.TOP_10)) ownedAlias.add(10);
     else if (index.includes(idDB.TOP_50)) ownedAlias.add(9);
     else if (index.includes(idDB.TOP_100)) ownedAlias.add(8);
-    if (!index.includes(selectedAlias)) {
+    if (!ownedAlias.has(selectedAlias)) {
       selectedAlias = Array.from(ownedAlias).pop();
     }
   }
