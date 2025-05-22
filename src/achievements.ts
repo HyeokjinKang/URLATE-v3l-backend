@@ -134,10 +134,10 @@ export const observer = async (
   let selectedAlias = userData[0].alias;
   if (context == "RANK") {
     // Rank 관련 alias는 8~11번입니다.
-    ownedAlias.delete("8");
-    ownedAlias.delete("9");
-    ownedAlias.delete("10");
-    ownedAlias.delete("11");
+    ownedAlias.delete(8);
+    ownedAlias.delete(9);
+    ownedAlias.delete(10);
+    ownedAlias.delete(11);
     if (index.includes(idDB.TOP_1)) ownedAlias.add(11);
     else if (index.includes(idDB.TOP_10)) ownedAlias.add(10);
     else if (index.includes(idDB.TOP_50)) ownedAlias.add(9);
