@@ -76,6 +76,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+app.options("*", cors());
+
 redisClient.on("connect", () => {
   signale.success("Connected to redis server.");
 });
