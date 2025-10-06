@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 import cookieParser from "cookie-parser";
 import express from "express";
-import RedisStore from "connect-redis";
 import session from "express-session";
 import { createClient } from "redis";
+import { RedisStore } from "connect-redis";
 import signale from "signale";
 import fetch from "node-fetch";
 import { v4 } from "uuid";
@@ -76,7 +76,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-app.options("*", cors());
+app.options("/{*any}", cors());
 
 redisClient.on("connect", () => {
   signale.success("Connected to redis server.");
@@ -733,7 +733,7 @@ app.put("/playRecord", async (req, res) => {
         },
       })
         .then((res) => res.json())
-        .then((data) => {
+        .then((data: any) => {
           if (data.result == "success") {
             res.status(200).json(createSuccessResponse("success"));
           } else {
