@@ -69,7 +69,7 @@ app.use(
     origin: config.project.url,
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE"],
-  })
+  }),
 );
 app.use(sessionMiddleware);
 app.use(express.json());
@@ -160,7 +160,7 @@ app.post("/auth/login", async (req, res) => {
   try {
     const payload: any = await gidVerify(
       req.body.jwt.credential,
-      req.body.jwt.clientId
+      req.body.jwt.clientId,
     );
     req.session.userid = payload.sub;
     req.session.email = payload.email;
@@ -178,8 +178,8 @@ app.post("/auth/login", async (req, res) => {
         createErrorResponse(
           "failed",
           "Verification failed",
-          "JWT Verification failed. Did you modify the JWT?"
-        )
+          "JWT Verification failed. Did you modify the JWT?",
+        ),
       );
   }
   return;
@@ -193,8 +193,8 @@ app.post("/auth/join", async (req, res) => {
         createErrorResponse(
           "failed",
           "Wrong Request",
-          "You need to login first."
-        )
+          "You need to login first.",
+        ),
       );
     return;
   }
@@ -205,7 +205,7 @@ app.post("/auth/join", async (req, res) => {
     res
       .status(400)
       .json(
-        createErrorResponse("failed", "Wrong Format", "Wrong name format.")
+        createErrorResponse("failed", "Wrong Format", "Wrong name format."),
       );
     return;
   }
@@ -251,8 +251,8 @@ app.post("/auth/join", async (req, res) => {
         createErrorResponse(
           "failed",
           "Exist Name",
-          "The name sent already exists."
-        )
+          "The name sent already exists.",
+        ),
       );
   }
 });
@@ -265,8 +265,8 @@ app.get("/user", async (req, res) => {
         createErrorResponse(
           "failed",
           "UserID Required",
-          "UserID is required for this task."
-        )
+          "UserID is required for this task.",
+        ),
       );
     return;
   }
@@ -279,7 +279,7 @@ app.get("/user", async (req, res) => {
       "userid",
       "tutorial",
       "picture",
-      "explicit"
+      "explicit",
     )
     .where("userid", req.session.userid);
   if (!results.length) {
@@ -289,8 +289,8 @@ app.get("/user", async (req, res) => {
         createErrorResponse(
           "failed",
           "Failed to Load",
-          "Failed to load data. Use /auth/status to check your status."
-        )
+          "Failed to load data. Use /auth/status to check your status.",
+        ),
       );
     return;
   }
@@ -306,8 +306,8 @@ app.post("/user", async (req, res) => {
         createErrorResponse(
           "failed",
           "UserID Required",
-          "UserID is required for this task."
-        )
+          "UserID is required for this task.",
+        ),
       );
     return;
   }
@@ -319,7 +319,7 @@ app.post("/user", async (req, res) => {
     res
       .status(400)
       .json(
-        createErrorResponse("failed", "Failed to Load", "Failed to load data.")
+        createErrorResponse("failed", "Failed to Load", "Failed to load data."),
       );
     return;
   }
@@ -347,7 +347,7 @@ app.get("/profile/:uid", async (req, res) => {
       "fc",
       "clear",
       "ownedAlias",
-      "explicit"
+      "explicit",
     )
     .where("userid", req.params.uid);
   const users = await knex("users").orderBy("rating", "desc");
@@ -357,7 +357,7 @@ app.get("/profile/:uid", async (req, res) => {
     res
       .status(400)
       .json(
-        createErrorResponse("failed", "Failed to Load", "Cannot find user.")
+        createErrorResponse("failed", "Failed to Load", "Cannot find user."),
       );
     return;
   }
@@ -373,7 +373,7 @@ app.get("/profilePic/:username", async (req, res) => {
     res
       .status(400)
       .json(
-        createErrorResponse("failed", "Failed to Load", "Cannot find user.")
+        createErrorResponse("failed", "Failed to Load", "Cannot find user."),
       );
     return;
   }
@@ -388,7 +388,7 @@ app.get("/tracks", async (req, res) => {
     "producer",
     "bpm",
     "difficulty",
-    "originalName"
+    "originalName",
   );
   if (!results.length) {
     res
@@ -397,8 +397,8 @@ app.get("/tracks", async (req, res) => {
         createErrorResponse(
           "failed",
           "Failed to Load",
-          "Failed to load tracks. It may be a problem with the DB."
-        )
+          "Failed to load tracks. It may be a problem with the DB.",
+        ),
       );
     return;
   }
@@ -417,8 +417,8 @@ app.get("/track/:name", async (req, res) => {
         createErrorResponse(
           "failed",
           "Failed to Load",
-          "Failed to load track. It may be a problem with the DB."
-        )
+          "Failed to load track. It may be a problem with the DB.",
+        ),
       );
     return;
   }
@@ -437,8 +437,8 @@ app.get("/trackInfo/:name", async (req, res) => {
         createErrorResponse(
           "failed",
           "Failed to Load",
-          "Failed to load track data. It may be a problem with the DB."
-        )
+          "Failed to load track data. It may be a problem with the DB.",
+        ),
       );
     return;
   }
@@ -453,8 +453,8 @@ app.put("/settings", async (req, res) => {
         createErrorResponse(
           "failed",
           "UserID Required",
-          "UserID is required for this task."
-        )
+          "UserID is required for this task.",
+        ),
       );
     return;
   }
@@ -479,8 +479,8 @@ app.put("/profile/:element", async (req, res) => {
         createErrorResponse(
           "failed",
           "UserID Required",
-          "UserID is required for this task."
-        )
+          "UserID is required for this task.",
+        ),
       );
     return;
   }
@@ -502,8 +502,8 @@ app.put("/profile/:element", async (req, res) => {
               createErrorResponse(
                 "failed",
                 "Authorize failed",
-                "Project secret key is not vaild."
-              )
+                "Project secret key is not vaild.",
+              ),
             );
           return;
         }
@@ -521,8 +521,8 @@ app.put("/profile/:element", async (req, res) => {
               createErrorResponse(
                 "failed",
                 "Authorize failed",
-                "Project secret key is not vaild."
-              )
+                "Project secret key is not vaild.",
+              ),
             );
           return;
         }
@@ -544,8 +544,8 @@ app.put("/profile/:element", async (req, res) => {
             createErrorResponse(
               "failed",
               "Error occured while updating",
-              "Undefined element name."
-            )
+              "Undefined element name.",
+            ),
           );
         return;
     }
@@ -566,8 +566,8 @@ app.put("/tutorial", async (req, res) => {
         createErrorResponse(
           "failed",
           "UserID Required",
-          "UserID is required for this task."
-        )
+          "UserID is required for this task.",
+        ),
       );
     return;
   }
@@ -596,8 +596,8 @@ app.get("/skin/:skinName", async (req, res) => {
         createErrorResponse(
           "failed",
           "Failed to Load",
-          "Failed to load skin data."
-        )
+          "Failed to load skin data.",
+        ),
       );
     return;
   }
@@ -612,7 +612,7 @@ app.get("/teamProfile/:name", async (req, res) => {
     res
       .status(400)
       .json(
-        createErrorResponse("failed", "Failed to Load", "Failed to load data.")
+        createErrorResponse("failed", "Failed to Load", "Failed to load data."),
       );
     return;
   }
@@ -633,8 +633,8 @@ app.put("/playRecord", async (req, res) => {
         createErrorResponse(
           "failed",
           "UserID Required",
-          "UserID is required for this task."
-        )
+          "UserID is required for this task.",
+        ),
       );
     return;
   }
@@ -649,8 +649,8 @@ app.put("/playRecord", async (req, res) => {
         createErrorResponse(
           "failed",
           "Failed to Load",
-          "Failed to load data. Use /auth/status to check your status."
-        )
+          "Failed to load data. Use /auth/status to check your status.",
+        ),
       );
     return;
   }
@@ -670,7 +670,7 @@ app.put("/playRecord", async (req, res) => {
         ((perfect + (great / 10) * 7 + good / 2 + (bad / 10) * 3) /
           (perfect + great + good + bad + miss + bullet)) *
         100
-      ).toFixed(1)
+      ).toFixed(1),
     );
     let rank = "";
     let medal = 1;
@@ -699,7 +699,7 @@ app.put("/playRecord", async (req, res) => {
         `${__dirname}/../logs/${req.body.userName}/${
           req.body.name
         }/${new Date().toString()}.json`,
-        req.body.record
+        req.body.record,
       );
       observer(`${req.session.userid}`, "JUDGE", {
         perfect,
@@ -743,8 +743,8 @@ app.put("/playRecord", async (req, res) => {
                 createErrorResponse(
                   "failed",
                   "Failed to Update",
-                  `Failed to update score. ${JSON.stringify(data.error)}`
-                )
+                  `Failed to update score. ${JSON.stringify(data.error)}`,
+                ),
               );
           }
         })
@@ -755,8 +755,8 @@ app.put("/playRecord", async (req, res) => {
               createErrorResponse(
                 "failed",
                 "Failed to Update",
-                `Failed to update score. ${e}`
-              )
+                `Failed to update score. ${e}`,
+              ),
             );
           return;
         });
@@ -767,8 +767,8 @@ app.put("/playRecord", async (req, res) => {
           createErrorResponse(
             "failed",
             "Failed to Verify",
-            "Failed to verify submitted data."
-          )
+            "Failed to verify submitted data.",
+          ),
         );
       return;
     }
@@ -779,8 +779,8 @@ app.put("/playRecord", async (req, res) => {
         createErrorResponse(
           "failed",
           "Failed to Auth",
-          "Failed to auth. Use /auth/status to check your status."
-        )
+          "Failed to auth. Use /auth/status to check your status.",
+        ),
       );
     return;
   }
@@ -794,8 +794,8 @@ app.put("/record", async (req, res) => {
         createErrorResponse(
           "failed",
           "Authorize failed",
-          "Project secret key is not vaild."
-        )
+          "Project secret key is not vaild.",
+        ),
       );
     return;
   }
@@ -821,8 +821,8 @@ app.put("/record", async (req, res) => {
       Math.round(
         (Number(req.body.record) / 100000000) *
           Number(req.body.accuracy) *
-          Number(req.body.difficulty)
-      )
+          Number(req.body.difficulty),
+      ),
     );
     let ratingDiff = rating;
     const ratingBest = await knex("trackRecords")
@@ -869,7 +869,7 @@ app.put("/record", async (req, res) => {
         "1stNum",
         "ap",
         "fc",
-        "clear"
+        "clear",
       );
     let ap = 0,
       fc = 0,
@@ -907,11 +907,11 @@ app.put("/record", async (req, res) => {
             ((Number(user[0].accuracy) * Number(user[0].playtime) +
               Number(req.body.accuracy)) *
               100) /
-              (Number(user[0].playtime) + 1)
+              (Number(user[0].playtime) + 1),
           ) / 100
         ).toFixed(2),
         recentPlay: JSON.stringify(
-          [index, ...JSON.parse(user[0].recentPlay)].slice(0, 10)
+          [index, ...JSON.parse(user[0].recentPlay)].slice(0, 10),
         ),
         playtime: Number(user[0].playtime) + 1,
         ap: Number(user[0].ap) + ap,
@@ -942,7 +942,7 @@ app.get("/record/:index", async (req, res) => {
       "judge",
       "isBest",
       "accuracy",
-      "rating"
+      "rating",
     )
     .where("index", req.params.index);
   if (!results.length) {
@@ -979,7 +979,7 @@ app.get("/bestRecords/:nickname", async (req, res) => {
       "judge",
       "isBest",
       "accuracy",
-      "rating"
+      "rating",
     )
     .where("nickname", req.params.nickname)
     .whereNot("rating", 0)
@@ -1006,7 +1006,7 @@ app.get(
     res
       .status(200)
       .json({ result: "success", results: results.slice(0, 100), rank: rank });
-  }
+  },
 );
 
 app.put("/coupon", async (req, res) => {
@@ -1017,8 +1017,8 @@ app.put("/coupon", async (req, res) => {
         createErrorResponse(
           "failed",
           "UserID Required",
-          "UserID is required for this task."
-        )
+          "UserID is required for this task.",
+        ),
       );
     return;
   }
@@ -1031,7 +1031,7 @@ app.put("/coupon", async (req, res) => {
       res
         .status(400)
         .json(
-          createErrorResponse("failed", "Invalid code", "Invalid code sent.")
+          createErrorResponse("failed", "Invalid code", "Invalid code sent."),
         );
       return;
     }
@@ -1043,8 +1043,8 @@ app.put("/coupon", async (req, res) => {
           createErrorResponse(
             "failed",
             "Used code",
-            "The code sent has already been used."
-          )
+            "The code sent has already been used.",
+          ),
         );
       return;
     }
@@ -1057,8 +1057,8 @@ app.put("/coupon", async (req, res) => {
             createErrorResponse(
               "failed",
               "Used code",
-              "The code sent has already been used."
-            )
+              "The code sent has already been used.",
+            ),
           );
         return;
       }
@@ -1076,8 +1076,8 @@ app.put("/coupon", async (req, res) => {
             createErrorResponse(
               "failed",
               "Already have",
-              "User already has the skin."
-            )
+              "User already has the skin.",
+            ),
           );
         return;
       } else {
@@ -1115,7 +1115,7 @@ app.get("/ranking/:sort/:limit", async (req, res) => {
         "userid",
         "accuracy",
         "scoreSum",
-        "explicit"
+        "explicit",
       )
       .orderBy("rating", req.params.sort)
       .limit(req.params.limit);
@@ -1152,8 +1152,8 @@ app.put("/CPLrecord", async (req, res) => {
         createErrorResponse(
           "failed",
           "Authorize failed",
-          "Project secret key is not vaild."
-        )
+          "Project secret key is not vaild.",
+        ),
       );
     return;
   }
@@ -1242,7 +1242,7 @@ app.get(
     res
       .status(200)
       .json({ result: "success", results: results.slice(0, 100), rank: rank });
-  }
+  },
 );
 
 app.get("/CPLpatternList/:name/:difficulty", async (req, res) => {
@@ -1256,7 +1256,7 @@ app.get("/CPLpatternList/:name/:difficulty", async (req, res) => {
       "analyzed",
       "community",
       "star",
-      "difficulty"
+      "difficulty",
     )
     .where("name", req.params.name)
     .where("difficulty", req.params.difficulty);
@@ -1282,8 +1282,8 @@ app.get("/notice/:lang", async (req, res) => {
         createErrorResponse(
           "failed",
           "Failed to Load",
-          "Failed to load skin data."
-        )
+          "Failed to load skin data.",
+        ),
       );
     return;
   }
