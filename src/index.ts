@@ -10,7 +10,6 @@ import { v4 } from "uuid";
 import schedule from "node-schedule";
 import fs from "fs-extra";
 import { OAuth2Client } from "google-auth-library";
-import cors from "cors";
 
 import { URLATEConfig } from "./types/config.schema";
 import {
@@ -64,19 +63,10 @@ const sessionMiddleware = session({
   },
 });
 
-app.use(
-  cors({
-    origin: config.project.url,
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE"],
-  }),
-);
 app.use(sessionMiddleware);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-
-app.options("/{*any}", cors());
 
 redisClient.on("connect", () => {
   signale.success("Connected to redis server.");
