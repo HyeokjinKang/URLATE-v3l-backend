@@ -39,7 +39,7 @@
     "comboCount": 50
   },
   "editor": {
-    "denyCursor": true,
+    "denyCursor": false,
     "denySkin": false
   }
 }
