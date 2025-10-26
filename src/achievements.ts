@@ -116,7 +116,7 @@ export const observer = async (
   let filteredIndex: number[];
   let newAchievements: number[];
   
-  if (context == "RANK") {
+  if (context === "RANK") {
     filteredIndex = index;
     newAchievements = index.filter((e) => !achievements.has(e));
   } else {
@@ -124,6 +124,8 @@ export const observer = async (
     newAchievements = filteredIndex;
   }
   
+  // Return early only if there's nothing to process at all
+  // For RANK context, continue even if newAchievements is empty (to update aliases)
   if (!filteredIndex.length) return;
 
   let achievementsList: Array<Achievement> = [];
