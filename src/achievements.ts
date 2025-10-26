@@ -144,7 +144,7 @@ export const observer = async (
   let ownedAlias = new Set(JSON.parse(userData[0].ownedAlias));
   let banner = new Set(JSON.parse(userData[0].banner));
   let selectedAlias = userData[0].alias;
-  if (context == "RANK") {
+  if (context === "RANK") {
     // Rank 관련 alias는 8~11번입니다.
     ownedAlias.delete(8);
     ownedAlias.delete(9);
@@ -161,11 +161,11 @@ export const observer = async (
   for (const achievement of achievementsList) {
     const rewards = JSON.parse(achievement.rewards);
     for (const reward of rewards) {
-      if (reward[0] == "alias" && context != "RANK") {
+      if (reward[0] === "alias" && context !== "RANK") {
         ownedAlias.add(reward[1]);
-      } else if (reward[0] == "reward") {
+      } else if (reward[0] === "reward") {
         //not yet
-      } else if (reward[0] == "banner") {
+      } else if (reward[0] === "banner") {
         banner.add(reward[1]);
       }
     }
