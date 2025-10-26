@@ -110,27 +110,32 @@ export const observer = async (
 
   // Get achievement index array from data. It will be [] if there is no achievement.
   const index: number[] = await achievedIndex(context, data);
-  const filteredIndex = index.filter((e) => {
-    if (context == "RANK") return true;
-    return !achievements.has(e);
-  });
+  
+  // For RANK context, we need to process all achievements to update aliases,
+  // but only send notifications for new achievements
+  let filteredIndex: number[];
+  let newAchievements: number[];
+  
+  if (context == "RANK") {
+    filteredIndex = index;
+    newAchievements = index.filter((e) => !achievements.has(e));
+  } else {
+    filteredIndex = index.filter((e) => !achievements.has(e));
+    newAchievements = filteredIndex;
+  }
+  
   if (!filteredIndex.length) return;
 
   let achievementsList: Array<Achievement> = [];
-  for (const i of filteredIndex) {
-    // For RANK context, only process new achievements for notifications
-    const isNewAchievement = !achievements.has(i);
-    
-    if (isNewAchievement) {
-      // Achieved!
-      knex("achievements").where("index", i).increment("count");
-      achievements.add(i);
-      // TODO: Find more elegant way to get i18n-ed data
-      const achievement = await knex("achievements")
-        .select("title_ko", "title_en", "detail_ko", "detail_en", "rewards")
-        .where("index", i);
-      achievementsList.push(achievement[0]);
-    }
+  for (const i of newAchievements) {
+    // Achieved!
+    knex("achievements").where("index", i).increment("count");
+    achievements.add(i);
+    // TODO: Find more elegant way to get i18n-ed data
+    const achievement = await knex("achievements")
+      .select("title_ko", "title_en", "detail_ko", "detail_en", "rewards")
+      .where("index", i);
+    achievementsList.push(achievement[0]);
   }
 
   // Reward
