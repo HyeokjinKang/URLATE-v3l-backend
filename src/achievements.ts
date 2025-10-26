@@ -110,14 +110,26 @@ export const observer = async (
 
   // Get achievement index array from data. It will be [] if there is no achievement.
   const index: number[] = await achievedIndex(context, data);
-  const filteredIndex = index.filter((e) => {
-    if (context == "RANK") return true;
-    return !achievements.has(e);
-  });
+  
+  // For RANK context, we need to process all achievements to update aliases,
+  // but only send notifications for new achievements
+  let filteredIndex: number[];
+  let newAchievements: number[];
+  
+  if (context === "RANK") {
+    filteredIndex = index;
+    newAchievements = index.filter((e) => !achievements.has(e));
+  } else {
+    filteredIndex = index.filter((e) => !achievements.has(e));
+    newAchievements = filteredIndex;
+  }
+  
+  // Return early only if there's nothing to process at all
+  // For RANK context, continue even if newAchievements is empty (to update aliases)
   if (!filteredIndex.length) return;
 
   let achievementsList: Array<Achievement> = [];
-  for (const i of filteredIndex) {
+  for (const i of newAchievements) {
     // Achieved!
     knex("achievements").where("index", i).increment("count");
     achievements.add(i);
@@ -132,7 +144,7 @@ export const observer = async (
   let ownedAlias = new Set(JSON.parse(userData[0].ownedAlias));
   let banner = new Set(JSON.parse(userData[0].banner));
   let selectedAlias = userData[0].alias;
-  if (context == "RANK") {
+  if (context === "RANK") {
     // Rank 관련 alias는 8~11번입니다.
     ownedAlias.delete(8);
     ownedAlias.delete(9);
@@ -149,11 +161,11 @@ export const observer = async (
   for (const achievement of achievementsList) {
     const rewards = JSON.parse(achievement.rewards);
     for (const reward of rewards) {
-      if (reward[0] == "alias" && context != "RANK") {
+      if (reward[0] === "alias" && context !== "RANK") {
         ownedAlias.add(reward[1]);
-      } else if (reward[0] == "reward") {
+      } else if (reward[0] === "reward") {
         //not yet
-      } else if (reward[0] == "banner") {
+      } else if (reward[0] === "banner") {
         banner.add(reward[1]);
       }
     }
@@ -172,18 +184,20 @@ export const observer = async (
       signale.error(err);
     });
 
-  // Send achievement data to game server
-  fetch(`${config.project.game}/emit/achievement`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      userid: userid,
-      secret: config.project.secretKey,
-      achievement: achievementsList,
-    }),
-  }).catch((err) => {
-    signale.error(err);
-  });
+  // Send achievement data to game server only if there are new achievements
+  if (achievementsList.length > 0) {
+    fetch(`${config.project.game}/emit/achievement`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        userid: userid,
+        secret: config.project.secretKey,
+        achievement: achievementsList,
+      }),
+    }).catch((err) => {
+      signale.error(err);
+    });
+  }
 };
