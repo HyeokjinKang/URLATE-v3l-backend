@@ -118,14 +118,19 @@ export const observer = async (
 
   let achievementsList: Array<Achievement> = [];
   for (const i of filteredIndex) {
-    // Achieved!
-    knex("achievements").where("index", i).increment("count");
-    achievements.add(i);
-    // TODO: Find more elegant way to get i18n-ed data
-    const achievement = await knex("achievements")
-      .select("title_ko", "title_en", "detail_ko", "detail_en", "rewards")
-      .where("index", i);
-    achievementsList.push(achievement[0]);
+    // For RANK context, only process new achievements for notifications
+    const isNewAchievement = !achievements.has(i);
+    
+    if (isNewAchievement) {
+      // Achieved!
+      knex("achievements").where("index", i).increment("count");
+      achievements.add(i);
+      // TODO: Find more elegant way to get i18n-ed data
+      const achievement = await knex("achievements")
+        .select("title_ko", "title_en", "detail_ko", "detail_en", "rewards")
+        .where("index", i);
+      achievementsList.push(achievement[0]);
+    }
   }
 
   // Reward
@@ -172,18 +177,20 @@ export const observer = async (
       signale.error(err);
     });
 
-  // Send achievement data to game server
-  fetch(`${config.project.game}/emit/achievement`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      userid: userid,
-      secret: config.project.secretKey,
-      achievement: achievementsList,
-    }),
-  }).catch((err) => {
-    signale.error(err);
-  });
+  // Send achievement data to game server only if there are new achievements
+  if (achievementsList.length > 0) {
+    fetch(`${config.project.game}/emit/achievement`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        userid: userid,
+        secret: config.project.secretKey,
+        achievement: achievementsList,
+      }),
+    }).catch((err) => {
+      signale.error(err);
+    });
+  }
 };
