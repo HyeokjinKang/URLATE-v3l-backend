@@ -575,25 +575,6 @@ app.put("/tutorial", async (req, res) => {
   res.status(200).json(createSuccessResponse("success"));
 });
 
-app.get("/skin/:skinName", async (req, res) => {
-  const results = await knex("skins")
-    .select("data")
-    .where("name", req.params.skinName);
-  if (!results.length) {
-    res
-      .status(400)
-      .json(
-        createErrorResponse(
-          "failed",
-          "Failed to Load",
-          "Failed to load skin data.",
-        ),
-      );
-    return;
-  }
-  res.status(200).json({ result: "success", data: results[0].data });
-});
-
 app.get("/teamProfile/:name", async (req, res) => {
   const results = await knex("teamProfiles")
     .select("data")
