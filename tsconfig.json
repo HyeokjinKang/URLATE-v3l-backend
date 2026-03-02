@@ -5,6 +5,7 @@
     // "lib": [],                             /* Specify library files to be included in the compilation. */
     "checkJs": false,
     "outDir": "dist",
+    "rootDir": "src",
     // Disable for now...
     "strict": true,
     "esModuleInterop": true,
