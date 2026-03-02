@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-var-requires */
 import cookieParser from "cookie-parser";
 import express from "express";
 import session from "express-session";
@@ -10,8 +9,9 @@ import { v4 } from "uuid";
 import schedule from "node-schedule";
 import fs from "fs-extra";
 import { OAuth2Client } from "google-auth-library";
+import Knex from "knex";
 
-import { URLATEConfig } from "./types/config.schema";
+import { URLATEConfig, SimpleResponse } from "./types/config.schema";
 import {
   createSuccessResponse,
   createErrorResponse,
@@ -19,8 +19,9 @@ import {
 } from "./api-response";
 import { observer } from "./achievements";
 
-const config: URLATEConfig = require(__dirname + "/../config/config.json");
-const settingsConfig = require(__dirname + "/../config/settings.json");
+import settingsConfig from "../config/settings.json";
+import configJSON from "../config/config.json";
+const config: URLATEConfig = configJSON;
 
 const gidClient = new OAuth2Client(config.google.clientId);
 
@@ -41,7 +42,7 @@ const redisStore = new RedisStore({
   prefix: "urlate:",
 });
 
-const knex = require("knex")({
+const knex = Knex({
   client: "mysql",
   connection: {
     host: config.database.host,
@@ -89,6 +90,7 @@ const uuid = () => {
   return tokens[2] + tokens[1] + tokens[0] + tokens[3] + tokens[4];
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const updateRankHistory = schedule.scheduleJob("59 23 * * *", async () => {
   signale.info(new Date());
   signale.pending(`Updating rank history...`);
@@ -148,20 +150,32 @@ app.get("/auth/status", async (req, res) => {
 
 app.post("/auth/login", async (req, res) => {
   try {
-    const payload: any = await gidVerify(
+    const payload = await gidVerify(
       req.body.jwt.credential,
       req.body.jwt.clientId,
     );
-    req.session.userid = payload.sub;
-    req.session.email = payload.email;
-    req.session.picture = payload.picture;
-    req.session.tempName = payload.name || payload.given_name || "Name";
-    req.session.save(() => {
-      signale.debug(new Date());
-      signale.debug(`User logined : ${payload.email}`);
-      res.status(200).json(createSuccessResponse("success"));
-    });
-  } catch (e: any) {
+    if (payload) {
+      req.session.userid = payload.sub;
+      req.session.email = payload.email;
+      req.session.picture = payload.picture;
+      req.session.tempName = payload.name || payload.given_name || "Name";
+      req.session.save(() => {
+        signale.debug(new Date());
+        signale.debug(`User logined : ${payload.email}`);
+        res.status(200).json(createSuccessResponse("success"));
+      });
+      return;
+    }
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Unexpected response",
+          "Unexpected response recieved.",
+        ),
+      );
+  } catch (err) {
     res
       .status(400)
       .json(
@@ -171,6 +185,7 @@ app.post("/auth/login", async (req, res) => {
           "JWT Verification failed. Did you modify the JWT?",
         ),
       );
+    console.error(err);
   }
   return;
 });
@@ -341,8 +356,7 @@ app.get("/profile/:uid", async (req, res) => {
     )
     .where("userid", req.params.uid);
   const users = await knex("users").orderBy("rating", "desc");
-  const rank =
-    users.findIndex((user: any) => user.userid === req.params.uid) + 1;
+  const rank = users.findIndex((user) => user.userid === req.params.uid) + 1;
   if (!results.length) {
     res
       .status(400)
@@ -452,10 +466,15 @@ app.put("/settings", async (req, res) => {
     await knex("users")
       .update({ settings: JSON.stringify(req.body.settings) })
       .where("userid", req.session.userid);
-  } catch (e: any) {
+  } catch (e) {
+    let message;
+    if (e instanceof Error) message = e.message;
+    else message = String(e);
     res
       .status(400)
-      .json(createErrorResponse("failed", "Error occured while updating", e));
+      .json(
+        createErrorResponse("failed", "Error occured while updating", message),
+      );
     return;
   }
   res.status(200).json(createSuccessResponse("success"));
@@ -475,8 +494,10 @@ app.put("/profile/:element", async (req, res) => {
     return;
   }
   try {
-    let userid = req.session.userid ? req.session.userid : req.body.userid;
-    let users = await knex("users").select("explicit").where("userid", userid);
+    const userid = req.session.userid ? req.session.userid : req.body.userid;
+    const users = await knex("users")
+      .select("explicit")
+      .where("userid", userid);
     let explicit = users[0].explicit;
     switch (req.params.element) {
       case "alias":
@@ -539,10 +560,15 @@ app.put("/profile/:element", async (req, res) => {
           );
         return;
     }
-  } catch (e: any) {
+  } catch (e) {
+    let message;
+    if (e instanceof Error) message = e.message;
+    else message = String(e);
     res
       .status(400)
-      .json(createErrorResponse("failed", "Error occured while updating", e));
+      .json(
+        createErrorResponse("failed", "Error occured while updating", message),
+      );
     return;
   }
   res.status(200).json(createSuccessResponse("success"));
@@ -566,10 +592,15 @@ app.put("/tutorial", async (req, res) => {
       .update({ tutorial: 1 })
       .where("userid", req.session.userid);
     observer(`${req.session.userid}`, "TUTORIAL_CLEAR");
-  } catch (e: any) {
+  } catch (e) {
+    let message;
+    if (e instanceof Error) message = e.message;
+    else message = String(e);
     res
       .status(400)
-      .json(createErrorResponse("failed", "Error occured while updating", e));
+      .json(
+        createErrorResponse("failed", "Error occured while updating", message),
+      );
     return;
   }
   res.status(200).json(createSuccessResponse("success"));
@@ -636,14 +667,14 @@ app.put("/playRecord", async (req, res) => {
     const bad = Number(req.body.bad);
     const miss = Number(req.body.miss);
     const bullet = Number(req.body.bullet);
-    let accuracy = Number(
+    const accuracy = Number(
       (
         ((perfect + (great / 10) * 7 + good / 2 + (bad / 10) * 3) /
           (perfect + great + good + bad + miss + bullet)) *
         100
       ).toFixed(1),
     );
-    let rank = "";
+    let rank;
     let medal = 1;
     if (accuracy >= 98 && bad == 0 && miss == 0 && bullet == 0) {
       rank = "SS";
@@ -703,8 +734,8 @@ app.put("/playRecord", async (req, res) => {
           "Content-Type": "application/json",
         },
       })
-        .then((res) => res.json())
-        .then((data: any) => {
+        .then((res) => res.json() as Promise<SimpleResponse>)
+        .then((data) => {
           if (data.result == "success") {
             res.status(200).json(createSuccessResponse("success"));
           } else {
@@ -890,11 +921,16 @@ app.put("/record", async (req, res) => {
         clear: Number(user[0].clear) + clear,
         "1stNum": Number(user[0]["1stNum"]) + (isBest == 2 ? 1 : 0),
       });
-  } catch (e: any) {
+  } catch (e) {
     console.error(e);
+    let message;
+    if (e instanceof Error) message = e.message;
+    else message = String(e);
     res
       .status(400)
-      .json(createErrorResponse("failed", "Error occured while updating", e));
+      .json(
+        createErrorResponse("failed", "Error occured while updating", message),
+      );
     return;
   }
   res.status(200).json(createSuccessResponse("success"));
@@ -970,7 +1006,7 @@ app.get(
       .orderBy(req.params.order, req.params.sort);
     const rank =
       results
-        .map((d: any) => {
+        .map((d) => {
           return d["nickname"];
         })
         .indexOf(req.params.nickname) + 1;
@@ -1066,17 +1102,22 @@ app.put("/coupon", async (req, res) => {
         .update({ usedUser: JSON.stringify(usedUser) })
         .where("code", code);
     }
-  } catch (e: any) {
+  } catch (e) {
+    let message;
+    if (e instanceof Error) message = e.message;
+    else message = String(e);
     res
       .status(400)
-      .json(createErrorResponse("failed", "Error occured while loading", e));
+      .json(
+        createErrorResponse("failed", "Error occured while loading", message),
+      );
     return;
   }
   res.status(200).json(createSuccessResponse("success"));
 });
 
 app.get("/ranking/:sort/:limit", async (req, res) => {
-  let results = [];
+  let results;
   try {
     results = await knex("users")
       .select(
@@ -1089,11 +1130,16 @@ app.get("/ranking/:sort/:limit", async (req, res) => {
         "explicit",
       )
       .orderBy("rating", req.params.sort)
-      .limit(req.params.limit);
-  } catch (e: any) {
+      .limit(Number(req.params.limit));
+  } catch (e) {
+    let message;
+    if (e instanceof Error) message = e.message;
+    else message = String(e);
     res
       .status(400)
-      .json(createErrorResponse("failed", "Error occured while loading", e));
+      .json(
+        createErrorResponse("failed", "Error occured while loading", message),
+      );
     return;
   }
   res.status(200).json({ result: "success", results });
@@ -1187,10 +1233,15 @@ app.put("/CPLrecord", async (req, res) => {
         difficulty: req.body.difficulty,
       });
     }
-  } catch (e: any) {
+  } catch (e) {
+    let message;
+    if (e instanceof Error) message = e.message;
+    else message = String(e);
     res
       .status(400)
-      .json(createErrorResponse("failed", "Error occured while updating", e));
+      .json(
+        createErrorResponse("failed", "Error occured while updating", message),
+      );
     return;
   }
   res.status(200).json(createSuccessResponse("success"));
@@ -1206,7 +1257,7 @@ app.get(
       .orderBy(req.params.order, req.params.sort);
     const rank =
       results
-        .map((d: any) => {
+        .map((d) => {
           return d["nickname"];
         })
         .indexOf(req.params.nickname) + 1;

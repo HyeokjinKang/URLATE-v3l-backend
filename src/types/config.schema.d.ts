@@ -131,3 +131,8 @@ export interface GoogleAPI {
    */
   clientSecret: string;
 }
+
+export interface SimpleResponse {
+  result: "success" | "failed";
+  error?: string;
+}
