@@ -20,8 +20,9 @@ import {
 import { observer } from "./achievements";
 
 import settingsConfig from "../config/settings.json";
-import configJSON from "../config/config.json";
-const config: URLATEConfig = configJSON;
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const config: URLATEConfig = require(__dirname + "/../config/config.json");
 
 const gidClient = new OAuth2Client(config.google.clientId);
 
