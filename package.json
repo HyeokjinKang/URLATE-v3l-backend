@@ -11,7 +11,9 @@
     "build": "tsc",
     "auto-build": "tsc --watch",
     "lint": "eslint",
-    "start": "supervisor dist/index.js",
+    "dev": "supervisor dist/index.js",
+    "start": "pm2 start ecosystem.config.js",
+    "stop": "pm2 stop URLATE-v3l-backend",
     "generate-types-from-schema": "json2ts -i schema/ -o src/types/"
   },
   "author": "Team Croissant",
