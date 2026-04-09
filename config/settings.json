@@ -4,7 +4,8 @@
   },
   "display": {
     "canvasRes": 100,
-    "albumRes": 75
+    "albumRes": 75,
+    "offset": 0
   },
   "sound": {
     "volume": {
