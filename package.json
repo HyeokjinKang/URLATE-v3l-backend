@@ -23,14 +23,14 @@
     "cookie-parser": "^1.4.7",
     "express": "^5.2.1",
     "express-session": "^1.19.0",
-    "fs-extra": "^11.3.5",
-    "google-auth-library": "^10.6.2",
-    "knex": "^3.2.10",
+    "fs-extra": "^11.3.6",
+    "google-auth-library": "^10.9.0",
+    "knex": "^3.3.0",
     "mysql": "^2.18.1",
     "node-fetch": "^3.3.2",
     "node-schedule": "^2.1.1",
     "redis": "^5.12.1",
-    "uuid": "^14.0.0"
+    "uuid": "^14.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -40,18 +40,18 @@
     "@types/express-mysql-session": "^3.0.8",
     "@types/express-session": "^1.19.0",
     "@types/fs-extra": "^11.0.4",
-    "@types/node": "^24.12.4",
+    "@types/node": "^24.13.3",
     "@types/node-fetch": "^2.6.13",
     "@types/node-schedule": "^2.1.8",
     "@types/signale": "^1.4.7",
-    "@typescript-eslint/eslint-plugin": "^8.60.0",
-    "@typescript-eslint/parser": "^8.60.0",
-    "eslint": "^10.4.1",
-    "globals": "^17.6.0",
+    "@typescript-eslint/eslint-plugin": "^8.64.0",
+    "@typescript-eslint/parser": "^8.64.0",
+    "eslint": "^10.7.0",
+    "globals": "^17.7.0",
     "json-schema-to-typescript": "^15.0.4",
     "signale": "^1.4.0",
     "supervisor": "^0.12.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.60.0"
+    "typescript-eslint": "^8.64.0"
   }
 }
