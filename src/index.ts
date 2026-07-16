@@ -158,6 +158,8 @@ const TRACK_ORDER_COLUMNS = new Set([
   "accuracy",
   "rating",
 ]);
+// 다국어 공지 언어 화이트리스트입니다.
+const NOTICE_LANGS = new Set(["ko", "en"]);
 
 // 판정 점수 이론적 상한(정합성 검증용). 실제 최고 기록보다 충분히 큰 값입니다.
 const MAX_SCORE = 100_000_000;
@@ -421,8 +423,10 @@ app.post("/user", async (req, res) => {
     return;
   }
 
+  // 임의 userid로 조회되는 인증 없는 엔드포인트이므로 개인 설정(settings)은 노출하지 않고
+  // 공개 가능한 nickname만 반환합니다.
   const results = await knex("users")
-    .select("nickname", "settings")
+    .select("nickname")
     .where("userid", req.body.userid);
   if (!results.length) {
     res
@@ -1408,6 +1412,20 @@ app.put("/coupon", rateLimit({ windowSec: 300, max: 30, prefix: "coupon" }), asy
 });
 
 app.get("/ranking/:sort/:limit", async (req, res) => {
+  const sort = (req.params.sort || "").toLowerCase();
+  if (!SORT_DIRECTIONS.has(sort)) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse("failed", "Wrong Format", "Invalid sort parameter."),
+      );
+    return;
+  }
+  // limit는 1~100 범위로 제한합니다(과도한 조회 방지).
+  const limit = Math.min(
+    Math.max(toFiniteNonNegInt(req.params.limit) ?? 0, 1),
+    100,
+  );
   let results;
   try {
     results = await knex("users")
@@ -1420,16 +1438,18 @@ app.get("/ranking/:sort/:limit", async (req, res) => {
         "scoreSum",
         "explicit",
       )
-      .orderBy("rating", req.params.sort)
-      .limit(Number(req.params.limit));
+      .orderBy("rating", sort)
+      .limit(limit);
   } catch (e) {
-    let message;
-    if (e instanceof Error) message = e.message;
-    else message = String(e);
+    signale.error(e);
     res
-      .status(400)
+      .status(500)
       .json(
-        createErrorResponse("failed", "Error occured while loading", message),
+        createErrorResponse(
+          "failed",
+          "Error occured while loading",
+          "Internal server error.",
+        ),
       );
     return;
   }
@@ -1616,6 +1636,15 @@ app.get("/CPLtrackInfo/:name", async (req, res) => {
 });
 
 app.get("/notice/:lang", async (req, res) => {
+  // 동적 컬럼명 조합에 사용되므로 lang을 화이트리스트로 제한합니다(식별자 주입 방지).
+  if (!NOTICE_LANGS.has(req.params.lang)) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse("failed", "Wrong Format", "Unsupported language."),
+      );
+    return;
+  }
   const results = await knex("notice")
     .select("date", `title_${req.params.lang}`, `url_${req.params.lang}`)
     .orderBy("date", "desc")
