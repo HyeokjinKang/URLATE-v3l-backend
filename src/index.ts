@@ -1203,11 +1203,11 @@ app.get("/record/:index", async (req, res) => {
   res.status(200).json({ result: "success", results });
 });
 
-app.get("/record/:track/:name", async (req, res) => {
+app.get("/record/:filename/:name", async (req, res) => {
   const results = await knex("trackRecords")
     .select("rank", "record", "maxcombo", "medal", "difficulty", "date")
     .where("nickname", req.params.name)
-    .where("name", req.params.track)
+    .where("name", req.params.filename)
     .where("isBest", 1)
     .orderBy("difficulty", "DESC");
   if (!results.length) {
@@ -1240,7 +1240,7 @@ app.get("/bestRecords/:nickname", async (req, res) => {
 });
 
 app.get(
-  "/records/:track/:difficulty/:order/:sort/:nickname",
+  "/records/:fileName/:difficulty/:order/:sort/:nickname",
   async (req, res) => {
     const order = req.params.order;
     const sort = (req.params.sort || "").toLowerCase();
@@ -1261,7 +1261,7 @@ app.get(
     // 상위 100개만 조회합니다(전체 로드 방지).
     const results = await knex("trackRecords")
       .select("rank", "record", "maxcombo", "nickname")
-      .where("name", req.params.track)
+      .where("name", req.params.fileName)
       .where("difficulty", req.params.difficulty)
       .where("isBest", 1)
       .orderBy(order, sort)
@@ -1271,7 +1271,7 @@ app.get(
     let rank = 0;
     const self = await knex("trackRecords")
       .select(order)
-      .where("name", req.params.track)
+      .where("name", req.params.fileName)
       .where("difficulty", req.params.difficulty)
       .where("isBest", 1)
       .where("nickname", req.params.nickname)
@@ -1279,7 +1279,7 @@ app.get(
     if (self) {
       const op = sort === "desc" ? ">" : "<";
       const [{ better }] = await knex("trackRecords")
-        .where("name", req.params.track)
+        .where("name", req.params.fileName)
         .where("difficulty", req.params.difficulty)
         .where("isBest", 1)
         .where(order, op, self[order])
