@@ -151,9 +151,22 @@ app.get("/auth/status", async (req, res) => {
 
 app.post("/auth/login", async (req, res) => {
   try {
+    if (!req.body.jwt || typeof req.body.jwt.credential !== "string") {
+      res
+        .status(400)
+        .json(
+          createErrorResponse(
+            "failed",
+            "Wrong Request",
+            "Missing credential.",
+          ),
+        );
+      return;
+    }
+    // audience는 서버 설정값으로 고정합니다. 클라이언트가 보낸 clientId는 신뢰하지 않습니다.
     const payload = await gidVerify(
       req.body.jwt.credential,
-      req.body.jwt.clientId,
+      config.google.clientId,
     );
     if (payload) {
       req.session.userid = payload.sub;
