@@ -169,14 +169,30 @@ app.post("/auth/login", async (req, res) => {
       config.google.clientId,
     );
     if (payload) {
-      req.session.userid = payload.sub;
-      req.session.email = payload.email;
-      req.session.picture = payload.picture;
-      req.session.tempName = payload.name || payload.given_name || "Name";
-      req.session.save(() => {
-        signale.debug(new Date());
-        signale.debug(`User logined : ${payload.email}`);
-        res.status(200).json(createSuccessResponse("success"));
+      // 세션 고정(Session Fixation) 방지: 인증 성공 시 세션 ID를 재발급합니다.
+      req.session.regenerate((regenErr) => {
+        if (regenErr) {
+          signale.error(regenErr);
+          res
+            .status(500)
+            .json(
+              createErrorResponse(
+                "failed",
+                "Session error",
+                "Failed to establish session.",
+              ),
+            );
+          return;
+        }
+        req.session.userid = payload.sub;
+        req.session.email = payload.email;
+        req.session.picture = payload.picture;
+        req.session.tempName = payload.name || payload.given_name || "Name";
+        req.session.save(() => {
+          signale.debug(new Date());
+          signale.debug(`User logined : ${payload.sub}`);
+          res.status(200).json(createSuccessResponse("success"));
+        });
       });
       return;
     }
