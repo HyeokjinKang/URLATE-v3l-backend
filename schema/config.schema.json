@@ -24,6 +24,12 @@
       "required": ["url", "api", "cdn", "game", "port", "secretKey"],
 
       "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["production", "test"],
+          "description": "서버 구동 모드입니다. production일 때 세션 쿠키에 secure 플래그가 적용됩니다(HTTPS 필요). 설정하지 않으면 production으로 간주합니다.",
+          "examples": ["production"]
+        },
         "url": {
           "type": "string",
           "format": "uri",

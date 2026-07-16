@@ -24,6 +24,10 @@ export interface URLATEConfig {
  */
 export interface Project {
   /**
+   * 서버 구동 모드입니다. production일 때 세션 쿠키에 secure 플래그가 적용됩니다(HTTPS 필요). 설정하지 않으면 production으로 간주합니다.
+   */
+  mode?: "production" | "test";
+  /**
    * 현재 프론트 엔드 서버가 호스트되고 있는 URL입니다. 슬래시로 끝나면 안되는 것에 주의합니다.
    */
   url: string;

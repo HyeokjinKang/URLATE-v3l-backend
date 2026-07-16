@@ -55,14 +55,25 @@ const knex = Knex({
   pool: { min: 0, max: 7 },
 });
 
+// production 이외의 모드에서만 secure 쿠키를 해제합니다(로컬 HTTP 개발용).
+const isProduction = config.project.mode !== "test";
+
+// 리버스 프록시(HTTPS 종단) 뒤에서 X-Forwarded-Proto를 신뢰하여
+// secure 쿠키가 정상 동작하도록 합니다.
+app.set("trust proxy", 1);
+
 const sessionMiddleware = session({
   store: redisStore,
-  resave: config.session.resave,
-  saveUninitialized: config.session.saveUninitialized,
+  resave: config.session.resave ?? false,
+  saveUninitialized: config.session.saveUninitialized ?? false,
   secret: config.session.secret,
   name: "urlate",
   cookie: {
     domain: config.session.domain,
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: "lax",
+    maxAge: 1000 * 60 * 60 * 24 * 14, // 14일
   },
 });
 
