@@ -5,7 +5,7 @@ import signale from "signale";
 const config: URLATEConfig = require(__dirname + "/../config/config.json");
 
 const knex = require("knex")({
-  client: "mysql",
+  client: "mysql2",
   connection: {
     host: config.database.host,
     user: config.database.user,
@@ -47,7 +47,7 @@ const idDB = {
 
 //TODO: EZPZ, 미드차이, 이건 좀 무섭네요
 const achievedIndex = async (context: string, data?: Data) => {
-  let index: Array<number> = [];
+  const index: Array<number> = [];
   switch (context) {
     case "TUTORIAL_CLEAR":
       index.push(idDB.TUTORIAL_CLEAR);
@@ -128,7 +128,7 @@ export const observer = async (
   // For RANK context, continue even if newAchievements is empty (to update aliases)
   if (!filteredIndex.length) return;
 
-  let achievementsList: Array<Achievement> = [];
+  const achievementsList: Array<Achievement> = [];
   for (const i of newAchievements) {
     // Achieved!
     knex("achievements").where("index", i).increment("count");
@@ -141,8 +141,8 @@ export const observer = async (
   }
 
   // Reward
-  let ownedAlias = new Set(JSON.parse(userData[0].ownedAlias));
-  let banner = new Set(JSON.parse(userData[0].banner));
+  const ownedAlias = new Set(JSON.parse(userData[0].ownedAlias));
+  const banner = new Set(JSON.parse(userData[0].banner));
   let selectedAlias = userData[0].alias;
   if (context === "RANK") {
     // Rank 관련 alias는 8~11번입니다.

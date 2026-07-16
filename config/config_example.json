@@ -1,6 +1,7 @@
 {
   "$schema": "../schema/config.schema.json",
   "project": {
+    "mode": "production",
     "url": "https://example.com",
     "api": "https://api.example.com",
     "cdn": "https://cdn.example.com",
