@@ -415,37 +415,6 @@ app.get("/user", async (req, res) => {
   res.status(200).json({ result: "success", user: results[0] });
 });
 
-app.post("/user", async (req, res) => {
-  if (!req.body.userid) {
-    res
-      .status(400)
-      .json(
-        createErrorResponse(
-          "failed",
-          "UserID Required",
-          "UserID is required for this task.",
-        ),
-      );
-    return;
-  }
-
-  // 임의 userid로 조회되는 인증 없는 엔드포인트이므로 개인 설정(settings)은 노출하지 않고
-  // 공개 가능한 nickname만 반환합니다.
-  const results = await knex("users")
-    .select("nickname")
-    .where("userid", req.body.userid);
-  if (!results.length) {
-    res
-      .status(400)
-      .json(
-        createErrorResponse("failed", "Failed to Load", "Failed to load data."),
-      );
-    return;
-  }
-
-  res.status(200).json({ result: "success", user: results[0] });
-});
-
 app.get("/profile/:uid", async (req, res) => {
   const results = await knex("users")
     .select(
