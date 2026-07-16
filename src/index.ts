@@ -138,8 +138,21 @@ const rateLimit =
   };
 
 // 파일 경로 세그먼트로 안전한 문자열인지 검증합니다(경로 조작 방지).
-const isSafeSegment = (value: unknown): value is string =>
-  typeof value === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(value);
+const isValidNickname = (value: unknown): value is string =>
+  typeof value === "string" && /^[A-Za-z0-9_-]{5,12}$/.test(value);
+
+// 트랙 이름은 원본 곡 이름이라 특수문자를 포함할 수 있으므로 세그먼트 규칙보다 넓게 허용합니다.
+// 단, 파일 경로 세그먼트로 쓰이기 때문에 경로 구분자/상위 참조/제어문자/널바이트는 금지합니다.
+// (실제 경로 탈출 방지는 호출부의 logsRoot 하위 검사와 함께 이중으로 보장됩니다.)
+const isValidTrackName = (value: unknown): value is string => {
+  if (typeof value !== "string") return false;
+  if (value.length < 1 || value.length > 200) return false;
+  if (value === "." || value === "..") return false;
+  // 경로 구분자(/, \), 제어문자(널바이트 포함)를 금지합니다.
+  // eslint-disable-next-line no-control-regex
+  if (/[/\\\x00-\x1f\x7f]/.test(value)) return false;
+  return true;
+};
 
 // 유한한 비음수 정수만 허용합니다(치팅용 이상치 방지).
 const toFiniteNonNegInt = (value: unknown): number | null => {
@@ -225,76 +238,80 @@ app.get("/auth/status", async (req, res) => {
   res.status(200).json(createStatusResponse("Logined"));
 });
 
-app.post("/auth/login", rateLimit({ windowSec: 300, max: 20, prefix: "login" }), async (req, res) => {
-  try {
-    if (!req.body.jwt || typeof req.body.jwt.credential !== "string") {
+app.post(
+  "/auth/login",
+  rateLimit({ windowSec: 300, max: 20, prefix: "login" }),
+  async (req, res) => {
+    try {
+      if (!req.body.jwt || typeof req.body.jwt.credential !== "string") {
+        res
+          .status(400)
+          .json(
+            createErrorResponse(
+              "failed",
+              "Wrong Request",
+              "Missing credential.",
+            ),
+          );
+        return;
+      }
+      // audience는 서버 설정값으로 고정합니다. 클라이언트가 보낸 clientId는 신뢰하지 않습니다.
+      const payload = await gidVerify(
+        req.body.jwt.credential,
+        config.google.clientId,
+      );
+      if (payload) {
+        // 세션 고정(Session Fixation) 방지: 인증 성공 시 세션 ID를 재발급합니다.
+        req.session.regenerate((regenErr) => {
+          if (regenErr) {
+            signale.error(regenErr);
+            res
+              .status(500)
+              .json(
+                createErrorResponse(
+                  "failed",
+                  "Session error",
+                  "Failed to establish session.",
+                ),
+              );
+            return;
+          }
+          req.session.userid = payload.sub;
+          req.session.email = payload.email;
+          req.session.picture = payload.picture;
+          req.session.tempName = payload.name || payload.given_name || "Name";
+          req.session.save(() => {
+            signale.debug(new Date());
+            signale.debug(`User logined : ${payload.sub}`);
+            res.status(200).json(createSuccessResponse("success"));
+          });
+        });
+        return;
+      }
       res
         .status(400)
         .json(
           createErrorResponse(
             "failed",
-            "Wrong Request",
-            "Missing credential.",
+            "Unexpected response",
+            "Unexpected response recieved.",
           ),
         );
-      return;
+    } catch (err) {
+      res
+        .status(400)
+        .json(
+          createErrorResponse(
+            "failed",
+            "Verification failed",
+            "JWT Verification failed. Did you modify the JWT?",
+          ),
+        );
+      console.error(err);
     }
-    // audience는 서버 설정값으로 고정합니다. 클라이언트가 보낸 clientId는 신뢰하지 않습니다.
-    const payload = await gidVerify(
-      req.body.jwt.credential,
-      config.google.clientId,
-    );
-    if (payload) {
-      // 세션 고정(Session Fixation) 방지: 인증 성공 시 세션 ID를 재발급합니다.
-      req.session.regenerate((regenErr) => {
-        if (regenErr) {
-          signale.error(regenErr);
-          res
-            .status(500)
-            .json(
-              createErrorResponse(
-                "failed",
-                "Session error",
-                "Failed to establish session.",
-              ),
-            );
-          return;
-        }
-        req.session.userid = payload.sub;
-        req.session.email = payload.email;
-        req.session.picture = payload.picture;
-        req.session.tempName = payload.name || payload.given_name || "Name";
-        req.session.save(() => {
-          signale.debug(new Date());
-          signale.debug(`User logined : ${payload.sub}`);
-          res.status(200).json(createSuccessResponse("success"));
-        });
-      });
-      return;
-    }
-    res
-      .status(400)
-      .json(
-        createErrorResponse(
-          "failed",
-          "Unexpected response",
-          "Unexpected response recieved.",
-        ),
-      );
-  } catch (err) {
-    res
-      .status(400)
-      .json(
-        createErrorResponse(
-          "failed",
-          "Verification failed",
-          "JWT Verification failed. Did you modify the JWT?",
-        ),
-      );
-    console.error(err);
-  }
-  return;
-});
+    return;
+  },
+);
 
 app.post("/auth/join", async (req, res) => {
   if (!req.session.userid) {
@@ -639,9 +656,7 @@ app.put("/profile/:element", async (req, res) => {
             );
           return;
         }
-        await knex("users")
-          .update({ alias: selected })
-          .where("userid", userid);
+        await knex("users").update({ alias: selected }).where("userid", userid);
         break;
       }
       case "background":
@@ -845,7 +860,7 @@ app.put("/playRecord", async (req, res) => {
 
   // 트랙 이름은 파일 경로와 DB 조회에 쓰이므로 안전한 형식만 허용합니다.
   const trackName = req.body.name;
-  if (!isSafeSegment(trackName) || !isSafeSegment(nickname)) {
+  if (!isValidTrackName(trackName) || !isValidNickname(nickname)) {
     res
       .status(400)
       .json(
@@ -1317,103 +1332,107 @@ app.get(
   },
 );
 
-app.put("/coupon", rateLimit({ windowSec: 300, max: 30, prefix: "coupon" }), async (req, res) => {
-  if (!req.session.userid) {
-    res
-      .status(400)
-      .json(
-        createErrorResponse(
-          "failed",
-          "UserID Required",
-          "UserID is required for this task.",
-        ),
-      );
-    return;
-  }
-  // 비즈니스 검증 실패를 트랜잭션 롤백과 함께 전달하기 위한 에러 타입입니다.
-  class CouponError extends Error {
-    constructor(
-      public error: string,
-      public description: string,
-    ) {
-      super(description);
-    }
-  }
-  // 위 가드에서 세션이 확인되었으므로 트랜잭션 클로저에서 사용할 userid를 캡처합니다.
-  const userid = req.session.userid;
-  try {
-    const code = req.body.code;
-    // 동일 코드에 대한 동시 사용을 직렬화하기 위해 트랜잭션 + 행 잠금으로 처리합니다.
-    await knex.transaction(async (trx) => {
-      const couponArr = await trx("codes")
-        .select("reward", "used", "usedUser")
-        .where("code", code)
-        .forUpdate();
-      if (couponArr.length != 1) {
-        throw new CouponError("Invalid code", "Invalid code sent.");
-      }
-      const coupon = couponArr[0];
-      if (coupon.used) {
-        throw new CouponError(
-          "Used code",
-          "The code sent has already been used.",
+app.put(
+  "/coupon",
+  rateLimit({ windowSec: 300, max: 30, prefix: "coupon" }),
+  async (req, res) => {
+    if (!req.session.userid) {
+      res
+        .status(400)
+        .json(
+          createErrorResponse(
+            "failed",
+            "UserID Required",
+            "UserID is required for this task.",
+          ),
         );
+      return;
+    }
+    // 비즈니스 검증 실패를 트랜잭션 롤백과 함께 전달하기 위한 에러 타입입니다.
+    class CouponError extends Error {
+      constructor(
+        public error: string,
+        public description: string,
+      ) {
+        super(description);
       }
-      const usedUser = JSON.parse(coupon.usedUser);
-      if (usedUser) {
-        if (usedUser.indexOf(userid) != -1) {
+    }
+    // 위 가드에서 세션이 확인되었으므로 트랜잭션 클로저에서 사용할 userid를 캡처합니다.
+    const userid = req.session.userid;
+    try {
+      const code = req.body.code;
+      // 동일 코드에 대한 동시 사용을 직렬화하기 위해 트랜잭션 + 행 잠금으로 처리합니다.
+      await knex.transaction(async (trx) => {
+        const couponArr = await trx("codes")
+          .select("reward", "used", "usedUser")
+          .where("code", code)
+          .forUpdate();
+        if (couponArr.length != 1) {
+          throw new CouponError("Invalid code", "Invalid code sent.");
+        }
+        const coupon = couponArr[0];
+        if (coupon.used) {
           throw new CouponError(
             "Used code",
             "The code sent has already been used.",
           );
         }
-      }
-      const reward = JSON.parse(coupon.reward);
-      if (reward.type == "skin") {
-        const statusArr = await trx("users")
-          .select("skins")
-          .where("userid", userid)
-          .forUpdate();
-        const skins = JSON.parse(statusArr[0].skins);
-        if (skins.indexOf(reward.content) != -1) {
-          throw new CouponError("Already have", "User already has the skin.");
-        } else {
-          skins.push(reward.content);
-          await trx("users")
-            .update({ skins: JSON.stringify(skins) })
-            .where("userid", userid);
+        const usedUser = JSON.parse(coupon.usedUser);
+        if (usedUser) {
+          if (usedUser.indexOf(userid) != -1) {
+            throw new CouponError(
+              "Used code",
+              "The code sent has already been used.",
+            );
+          }
         }
+        const reward = JSON.parse(coupon.reward);
+        if (reward.type == "skin") {
+          const statusArr = await trx("users")
+            .select("skins")
+            .where("userid", userid)
+            .forUpdate();
+          const skins = JSON.parse(statusArr[0].skins);
+          if (skins.indexOf(reward.content) != -1) {
+            throw new CouponError("Already have", "User already has the skin.");
+          } else {
+            skins.push(reward.content);
+            await trx("users")
+              .update({ skins: JSON.stringify(skins) })
+              .where("userid", userid);
+          }
+        }
+        if (!reward.nolimit) {
+          await trx("codes").update({ used: 1 }).where("code", code);
+        } else {
+          usedUser.push(userid);
+          await trx("codes")
+            .update({ usedUser: JSON.stringify(usedUser) })
+            .where("code", code);
+        }
+      });
+    } catch (e) {
+      if (e instanceof CouponError) {
+        res
+          .status(400)
+          .json(createErrorResponse("failed", e.error, e.description));
+        return;
       }
-      if (!reward.nolimit) {
-        await trx("codes").update({ used: 1 }).where("code", code);
-      } else {
-        usedUser.push(userid);
-        await trx("codes")
-          .update({ usedUser: JSON.stringify(usedUser) })
-          .where("code", code);
-      }
-    });
-  } catch (e) {
-    if (e instanceof CouponError) {
+      signale.error(e);
       res
-        .status(400)
-        .json(createErrorResponse("failed", e.error, e.description));
+        .status(500)
+        .json(
+          createErrorResponse(
+            "failed",
+            "Error occured while loading",
+            "Internal server error.",
+          ),
+        );
       return;
     }
-    signale.error(e);
-    res
-      .status(500)
-      .json(
-        createErrorResponse(
-          "failed",
-          "Error occured while loading",
-          "Internal server error.",
-        ),
-      );
-    return;
-  }
-  res.status(200).json(createSuccessResponse("success"));
-});
+    res.status(200).json(createSuccessResponse("success"));
+  },
+);
 
 app.get("/ranking/:sort/:limit", async (req, res) => {
   const sort = (req.params.sort || "").toLowerCase();
@@ -1421,7 +1440,11 @@ app.get("/ranking/:sort/:limit", async (req, res) => {
     res
       .status(400)
       .json(
-        createErrorResponse("failed", "Wrong Format", "Invalid sort parameter."),
+        createErrorResponse(
+          "failed",
+          "Wrong Format",
+          "Invalid sort parameter.",
+        ),
       );
     return;
   }
