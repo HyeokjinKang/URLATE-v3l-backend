@@ -848,7 +848,7 @@ app.put("/playRecord", async (req, res) => {
   const nickname: string = results[0].nickname;
 
   // 파일 이름은 파일 경로와 DB 조회에 쓰이므로 안전한 형식만 허용합니다.
-  const fileName = req.body.filename;
+  const fileName = req.body.fileName;
   if (!isValidFileName(fileName) || !isValidNickname(nickname)) {
     res
       .status(400)
