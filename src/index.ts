@@ -164,7 +164,7 @@ const TRACK_ORDER_COLUMNS = new Set([
 const NOTICE_LANGS = new Set(["ko", "en"]);
 
 // 판정 점수 이론적 상한(정합성 검증용). 실제 최고 기록보다 충분히 큰 값입니다.
-const MAX_SCORE = 100_000_000;
+const MAX_SCORE = 200_000_000;
 
 // 전역 rate limit: IP당 분당 요청 수를 제한하여 남용/DoS를 완화합니다.
 app.use(rateLimit({ windowSec: 60, max: 600, prefix: "global" }));
