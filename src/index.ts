@@ -8,6 +8,7 @@ import fetch from "node-fetch";
 import { v4 } from "uuid";
 import schedule from "node-schedule";
 import fs from "fs-extra";
+import path from "path";
 import { OAuth2Client } from "google-auth-library";
 import Knex from "knex";
 
@@ -90,6 +91,22 @@ const uuid = () => {
   const tokens = v4().split("-");
   return tokens[2] + tokens[1] + tokens[0] + tokens[3] + tokens[4];
 };
+
+// 파일 경로 세그먼트로 안전한 문자열인지 검증합니다(경로 조작 방지).
+const isSafeSegment = (value: unknown): value is string =>
+  typeof value === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(value);
+
+// 유한한 비음수 정수만 허용합니다(치팅용 이상치 방지).
+const toFiniteNonNegInt = (value: unknown): number | null => {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) return null;
+  return n;
+};
+
+// 판정 점수 이론적 상한(정합성 검증용). 실제 최고 기록보다 충분히 큰 값입니다.
+const MAX_SCORE = 100_000_000;
+
+// 파일 경로 세그먼트로 안전한
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const updateRankHistory = schedule.scheduleJob("59 23 * * *", async () => {
@@ -687,134 +704,190 @@ app.put("/playRecord", async (req, res) => {
     return;
   }
 
-  if (
-    results[0].userid == req.body.userid &&
-    results[0].username == req.body.username
-  ) {
-    const perfect = Number(req.body.perfect);
-    const great = Number(req.body.great);
-    const good = Number(req.body.good);
-    const bad = Number(req.body.bad);
-    const miss = Number(req.body.miss);
-    const bullet = Number(req.body.bullet);
-    const accuracy = Number(
-      (
-        ((perfect + (great / 10) * 7 + good / 2 + (bad / 10) * 3) /
-          (perfect + great + good + bad + miss + bullet)) *
-        100
-      ).toFixed(1),
-    );
-    let rank;
-    let medal = 1;
-    if (accuracy >= 98 && bad == 0 && miss == 0 && bullet == 0) {
-      rank = "SS";
-    } else if (accuracy >= 95) {
-      rank = "S";
-    } else if (accuracy >= 90) {
-      rank = "A";
-    } else if (accuracy >= 80) {
-      rank = "B";
-    } else if (accuracy >= 70) {
-      rank = "C";
-    } else {
-      rank = "F";
-      medal = 0;
-    }
-    if (bad == 0 && miss == 0 && bullet == 0) {
-      medal += 2;
-      if (bad == 0 && good == 0 && great == 0 && perfect != 0) {
-        medal = 7;
-      }
-    }
-    if (rank == req.body.rank && accuracy == req.body.accuracy) {
-      fs.outputJson(
-        `${__dirname}/../logs/${req.body.userName}/${
-          req.body.name
-        }/${new Date().toString()}.json`,
-        req.body.record,
+  // 신원은 세션에서 확정된 값만 신뢰합니다. 클라이언트가 보낸 userid/username은 사용하지 않습니다.
+  const nickname: string = results[0].nickname;
+
+  // 트랙 이름은 파일 경로와 DB 조회에 쓰이므로 안전한 형식만 허용합니다.
+  const trackName = req.body.name;
+  if (!isSafeSegment(trackName) || !isSafeSegment(nickname)) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Wrong Format",
+          "Invalid track or user name.",
+        ),
       );
-      observer(`${req.session.userid}`, "JUDGE", {
-        perfect,
-        great,
-        good,
-        bad,
-        miss,
-        bullet,
-        accuracy,
-        rank,
-        medal,
-      });
-      fetch(`http://localhost:${config.project.port}/record`, {
+    return;
+  }
+
+  // 판정 카운트/점수/콤보는 유한한 비음수 정수만 허용합니다(이상치·치팅 방지).
+  const perfect = toFiniteNonNegInt(req.body.perfect);
+  const great = toFiniteNonNegInt(req.body.great);
+  const good = toFiniteNonNegInt(req.body.good);
+  const bad = toFiniteNonNegInt(req.body.bad);
+  const miss = toFiniteNonNegInt(req.body.miss);
+  const bullet = toFiniteNonNegInt(req.body.bullet);
+  const score = toFiniteNonNegInt(req.body.score);
+  const maxCombo = toFiniteNonNegInt(req.body.maxCombo);
+  const difficultySelection = toFiniteNonNegInt(req.body.difficultySelection);
+  const difficulty = Number(req.body.difficulty);
+  if (
+    perfect === null ||
+    great === null ||
+    good === null ||
+    bad === null ||
+    miss === null ||
+    bullet === null ||
+    score === null ||
+    maxCombo === null ||
+    difficultySelection === null ||
+    !Number.isFinite(difficulty) ||
+    difficulty < 0
+  ) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Wrong Format",
+          "Invalid numeric values in submitted record.",
+        ),
+      );
+    return;
+  }
+
+  const totalJudge = perfect + great + good + bad + miss + bullet;
+  if (totalJudge === 0 || score > MAX_SCORE) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Wrong Format",
+          "Submitted record is out of valid range.",
+        ),
+      );
+    return;
+  }
+
+  const accuracy = Number(
+    (
+      ((perfect + (great / 10) * 7 + good / 2 + (bad / 10) * 3) / totalJudge) *
+      100
+    ).toFixed(1),
+  );
+  let rank;
+  let medal = 1;
+  if (accuracy >= 98 && bad == 0 && miss == 0 && bullet == 0) {
+    rank = "SS";
+  } else if (accuracy >= 95) {
+    rank = "S";
+  } else if (accuracy >= 90) {
+    rank = "A";
+  } else if (accuracy >= 80) {
+    rank = "B";
+  } else if (accuracy >= 70) {
+    rank = "C";
+  } else {
+    rank = "F";
+    medal = 0;
+  }
+  if (bad == 0 && miss == 0 && bullet == 0) {
+    medal += 2;
+    if (bad == 0 && good == 0 && great == 0 && perfect != 0) {
+      medal = 7;
+    }
+  }
+  // 서버가 재계산한 rank/accuracy와 클라이언트 주장이 일치하는지 확인합니다.
+  // NOTE: score(record) 자체는 여전히 클라이언트 계산값입니다. 완전한 치팅 방지에는
+  // 서버측 리플레이 재생 검증이 필요하며, 이는 후속 과제입니다.
+  if (rank != req.body.rank || accuracy != Number(req.body.accuracy)) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Failed to Verify",
+          "Failed to verify submitted data.",
+        ),
+      );
+    return;
+  }
+
+  // 로그 경로는 검증된 세그먼트만으로 구성하고 최종 경로가 로그 루트 하위인지 확인합니다.
+  const logsRoot = path.resolve(__dirname, "../logs");
+  const logDir = path.resolve(logsRoot, nickname, trackName);
+  if (logDir !== logsRoot && !logDir.startsWith(logsRoot + path.sep)) {
+    res
+      .status(400)
+      .json(createErrorResponse("failed", "Wrong Format", "Invalid log path."));
+    return;
+  }
+  const logFile = path.join(logDir, `${Date.now()}.json`);
+  fs.outputJson(logFile, req.body.record).catch((err) => signale.error(err));
+
+  observer(`${req.session.userid}`, "JUDGE", {
+    perfect,
+    great,
+    good,
+    bad,
+    miss,
+    bullet,
+    accuracy,
+    rank,
+    medal,
+  });
+  try {
+    const recordRes = await fetch(
+      `http://localhost:${config.project.port}/record`,
+      {
         method: "PUT",
         body: JSON.stringify({
           secret: config.project.secretKey,
-          name: req.body.name,
-          nickname: req.body.userName,
+          name: trackName,
+          nickname,
           rank,
-          record: req.body.score,
-          maxcombo: req.body.maxCombo,
+          record: score,
+          maxcombo: maxCombo,
           medal,
-          difficultySelection: req.body.difficultySelection,
-          difficulty: req.body.difficulty,
+          difficultySelection,
+          difficulty,
           judge: `${perfect} / ${great} / ${good} / ${bad} / ${miss} / ${bullet}`,
-          accuracy: req.body.accuracy,
+          accuracy,
           uid: req.session.userid,
         }),
         headers: {
           "Content-Type": "application/json",
         },
-      })
-        .then((res) => res.json() as Promise<SimpleResponse>)
-        .then((data) => {
-          if (data.result == "success") {
-            res.status(200).json(createSuccessResponse("success"));
-          } else {
-            res
-              .status(400)
-              .json(
-                createErrorResponse(
-                  "failed",
-                  "Failed to Update",
-                  `Failed to update score. ${JSON.stringify(data.error)}`,
-                ),
-              );
-          }
-        })
-        .catch((e) => {
-          res
-            .status(400)
-            .json(
-              createErrorResponse(
-                "failed",
-                "Failed to Update",
-                `Failed to update score. ${e}`,
-              ),
-            );
-          return;
-        });
+      },
+    );
+    const data = (await recordRes.json()) as SimpleResponse;
+    if (data.result == "success") {
+      res.status(200).json(createSuccessResponse("success"));
     } else {
       res
         .status(400)
         .json(
           createErrorResponse(
             "failed",
-            "Failed to Verify",
-            "Failed to verify submitted data.",
+            "Failed to Update",
+            "Failed to update score.",
           ),
         );
-      return;
     }
-  } else {
+  } catch (e) {
+    signale.error(e);
     res
-      .status(400)
+      .status(500)
       .json(
         createErrorResponse(
           "failed",
-          "Failed to Auth",
-          "Failed to auth. Use /auth/status to check your status.",
+          "Failed to Update",
+          "Failed to update score.",
         ),
       );
-    return;
   }
 });
 
