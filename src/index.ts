@@ -543,15 +543,40 @@ app.put("/profile/:element", async (req, res) => {
   try {
     const userid = req.session.userid ? req.session.userid : req.body.userid;
     const users = await knex("users")
-      .select("explicit")
+      .select("explicit", "ownedAlias", "banner")
       .where("userid", userid);
-    let explicit = users[0].explicit;
+    if (!users.length) {
+      res
+        .status(400)
+        .json(
+          createErrorResponse("failed", "Failed to Load", "Cannot find user."),
+        );
+      return;
+    }
+    // background(2), picture(1) explicit 여부를 담는 비트필드입니다.
+    let explicit = Number(users[0].explicit);
     switch (req.params.element) {
-      case "alias":
+      case "alias": {
+        // 소유한 alias(칭호)만 장착할 수 있도록 검증합니다.
+        const ownedAlias: number[] = JSON.parse(users[0].ownedAlias);
+        const selected = Number(req.body.value);
+        if (!Number.isInteger(selected) || !ownedAlias.includes(selected)) {
+          res
+            .status(400)
+            .json(
+              createErrorResponse(
+                "failed",
+                "Not Owned",
+                "You do not own the selected alias.",
+              ),
+            );
+          return;
+        }
         await knex("users")
-          .update({ alias: req.body.value })
+          .update({ alias: selected })
           .where("userid", userid);
         break;
+      }
       case "background":
         if (req.body.secret !== config.project.secretKey) {
           res
@@ -565,8 +590,8 @@ app.put("/profile/:element", async (req, res) => {
             );
           return;
         }
-        if (req.body.explicit && explicit < 2) explicit += 2;
-        else if (explicit >= 2) explicit -= 2;
+        // background explicit = 비트 1(값 2)
+        explicit = req.body.explicit ? explicit | 2 : explicit & ~2;
         await knex("users")
           .update({ background: req.body.value, explicit })
           .where("userid", userid);
@@ -584,17 +609,57 @@ app.put("/profile/:element", async (req, res) => {
             );
           return;
         }
-        if (req.body.explicit && explicit % 2 == 0) explicit++;
-        else if (explicit % 2 == 1) explicit--;
+        // picture explicit = 비트 0(값 1)
+        explicit = req.body.explicit ? explicit | 1 : explicit & ~1;
         await knex("users")
           .update({ picture: req.body.value, explicit })
           .where("userid", userid);
         break;
-      case "banner":
+      case "banner": {
+        // 배너는 가시성 토글((-) 마커)만 허용합니다. 소유 목록 자체는 변경할 수 없습니다.
+        let submitted: unknown;
+        try {
+          submitted =
+            typeof req.body.value === "string"
+              ? JSON.parse(req.body.value)
+              : req.body.value;
+        } catch {
+          submitted = null;
+        }
+        const owned: string[] = JSON.parse(users[0].banner);
+        const normalize = (arr: unknown): string[] | null => {
+          if (!Array.isArray(arr)) return null;
+          const names: string[] = [];
+          for (const item of arr) {
+            if (typeof item !== "string") return null;
+            names.push(item.replace("(-)", ""));
+          }
+          return names.sort();
+        };
+        const submittedNames = normalize(submitted);
+        const ownedNames = normalize(owned);
+        if (
+          !submittedNames ||
+          !ownedNames ||
+          submittedNames.length !== ownedNames.length ||
+          submittedNames.some((n, i) => n !== ownedNames[i])
+        ) {
+          res
+            .status(400)
+            .json(
+              createErrorResponse(
+                "failed",
+                "Invalid banner",
+                "Banner list does not match owned banners.",
+              ),
+            );
+          return;
+        }
         await knex("users")
-          .update({ banner: req.body.value })
+          .update({ banner: JSON.stringify(submitted) })
           .where("userid", userid);
         break;
+      }
       default:
         res
           .status(400)
@@ -608,13 +673,15 @@ app.put("/profile/:element", async (req, res) => {
         return;
     }
   } catch (e) {
-    let message;
-    if (e instanceof Error) message = e.message;
-    else message = String(e);
+    signale.error(e);
     res
-      .status(400)
+      .status(500)
       .json(
-        createErrorResponse("failed", "Error occured while updating", message),
+        createErrorResponse(
+          "failed",
+          "Error occured while updating",
+          "Internal server error.",
+        ),
       );
     return;
   }
