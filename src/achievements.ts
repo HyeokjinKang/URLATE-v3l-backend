@@ -5,7 +5,7 @@ import signale from "signale";
 const config: URLATEConfig = require(__dirname + "/../config/config.json");
 
 const knex = require("knex")({
-  client: "mysql",
+  client: "mysql2",
   connection: {
     host: config.database.host,
     user: config.database.user,

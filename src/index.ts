@@ -45,7 +45,7 @@ const redisStore = new RedisStore({
 });
 
 const knex = Knex({
-  client: "mysql",
+  client: "mysql2",
   connection: {
     host: config.database.host,
     user: config.database.user,
