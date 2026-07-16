@@ -1033,134 +1033,166 @@ app.put("/record", async (req, res) => {
     return;
   }
   try {
-    let isBest = 0;
-    const result = await knex("trackRecords")
-      .select("record", "medal", "index")
-      .where("nickname", req.body.nickname)
-      .where("name", req.body.name)
-      .where("isBest", 1)
-      .where("difficulty", req.body.difficultySelection);
-    if (result.length && result[0].record < req.body.record) {
-      isBest = 1;
-      await knex("trackRecords")
-        .update({
-          isBest: 0,
-        })
-        .where("index", result[0].index);
-    }
-    if (!result.length) isBest = 1;
-    const index = uuid();
-    let rating = Number(
-      Math.round(
-        (Number(req.body.record) / 100000000) *
-          Number(req.body.accuracy) *
-          Number(req.body.difficulty),
-      ),
-    );
-    let ratingDiff = rating;
-    const ratingBest = await knex("trackRecords")
-      .select("rating", "index")
-      .where("nickname", req.body.nickname)
-      .where("name", req.body.name)
-      .where("difficulty", req.body.difficultySelection)
-      .orderBy("rating", "desc")
-      .limit(1);
-    if (ratingBest.length) {
-      if (Number(ratingBest[0].rating) > rating) rating = 0;
-      else {
-        await knex("trackRecords")
-          .update({
-            rating: 0,
-          })
-          .where("index", ratingBest[0].index);
-        ratingDiff = rating - Number(ratingBest[0].rating);
+    // read-modify-write 경쟁 조건 방지를 위해 트랜잭션 + 사용자 행 잠금으로 처리합니다.
+    await knex.transaction(async (trx) => {
+      // 난이도는 클라이언트 값을 신뢰하지 않고 tracks 테이블에서 권위 있는 값을 도출합니다.
+      let difficultyValue = Number(req.body.difficulty);
+      const trackRow = await trx("tracks")
+        .select("difficulty")
+        .where("name", req.body.name)
+        .first();
+      if (trackRow) {
+        try {
+          const arr = JSON.parse(trackRow.difficulty);
+          const idx = Number(req.body.difficultySelection) - 1;
+          if (
+            Array.isArray(arr) &&
+            idx >= 0 &&
+            idx < arr.length &&
+            Number.isFinite(Number(arr[idx]))
+          ) {
+            difficultyValue = Number(arr[idx]);
+          }
+        } catch {
+          // 파싱 실패 시 상한 검증을 거친 클라이언트 값으로 폴백합니다.
+        }
       }
-    }
-    await knex("trackRecords").insert({
-      name: req.body.name,
-      nickname: req.body.nickname,
-      rank: req.body.rank,
-      record: req.body.record,
-      maxcombo: req.body.maxcombo,
-      medal: req.body.medal,
-      difficulty: req.body.difficultySelection,
-      date: new Date(),
-      isBest,
-      index,
-      judge: req.body.judge,
-      accuracy: req.body.accuracy,
-      rating,
-    });
-    const user = await knex("users")
-      .where("nickname", req.body.nickname)
-      .select(
-        "rating",
-        "scoreSum",
-        "accuracy",
-        "recentPlay",
-        "playtime",
-        "1stNum",
-        "ap",
-        "fc",
-        "clear",
-      );
-    let ap = 0,
-      fc = 0,
-      clear = 0,
-      medal = Number(req.body.medal);
-    if (isBest) {
-      if (result.length) medal = medal - result[0].medal;
-      if (medal >= 4) {
-        ap = 1;
-        medal -= 4;
-      }
-      if (medal >= 2) {
-        fc = 1;
-        medal -= 2;
-      }
-      if (medal >= 1) {
-        clear = 1;
-      }
-      const allRecords = await knex("trackRecords")
-        .select("nickname")
+
+      let isBest = 0;
+      const result = await trx("trackRecords")
+        .select("record", "medal", "index")
+        .where("nickname", req.body.nickname)
         .where("name", req.body.name)
         .where("isBest", 1)
-        .where("difficulty", req.body.difficultySelection)
-        .orderBy("record", "desc")
-        .limit(1);
-      if (allRecords[0].nickname == req.body.nickname) isBest = 2;
-    }
-    await knex("users")
-      .where("nickname", req.body.nickname)
-      .update({
-        rating: Number(user[0].rating) + ratingDiff,
-        scoreSum: Number(user[0].scoreSum) + Number(req.body.record),
-        accuracy: (
-          Math.round(
-            ((Number(user[0].accuracy) * Number(user[0].playtime) +
-              Number(req.body.accuracy)) *
-              100) /
-              (Number(user[0].playtime) + 1),
-          ) / 100
-        ).toFixed(2),
-        recentPlay: JSON.stringify(
-          [index, ...JSON.parse(user[0].recentPlay)].slice(0, 10),
+        .where("difficulty", req.body.difficultySelection);
+      if (result.length && result[0].record < req.body.record) {
+        isBest = 1;
+        await trx("trackRecords")
+          .update({
+            isBest: 0,
+          })
+          .where("index", result[0].index);
+      }
+      if (!result.length) isBest = 1;
+      const index = uuid();
+      let rating = Number(
+        Math.round(
+          (Number(req.body.record) / 100000000) *
+            Number(req.body.accuracy) *
+            difficultyValue,
         ),
-        playtime: Number(user[0].playtime) + 1,
-        ap: Number(user[0].ap) + ap,
-        fc: Number(user[0].fc) + fc,
-        clear: Number(user[0].clear) + clear,
-        "1stNum": Number(user[0]["1stNum"]) + (isBest == 2 ? 1 : 0),
+      );
+      let ratingDiff = rating;
+      const ratingBest = await trx("trackRecords")
+        .select("rating", "index")
+        .where("nickname", req.body.nickname)
+        .where("name", req.body.name)
+        .where("difficulty", req.body.difficultySelection)
+        .orderBy("rating", "desc")
+        .limit(1);
+      if (ratingBest.length) {
+        if (Number(ratingBest[0].rating) > rating) rating = 0;
+        else {
+          await trx("trackRecords")
+            .update({
+              rating: 0,
+            })
+            .where("index", ratingBest[0].index);
+          ratingDiff = rating - Number(ratingBest[0].rating);
+        }
+      }
+      await trx("trackRecords").insert({
+        name: req.body.name,
+        nickname: req.body.nickname,
+        rank: req.body.rank,
+        record: req.body.record,
+        maxcombo: req.body.maxcombo,
+        medal: req.body.medal,
+        difficulty: req.body.difficultySelection,
+        date: new Date(),
+        isBest,
+        index,
+        judge: req.body.judge,
+        accuracy: req.body.accuracy,
+        rating,
       });
+      const user = await trx("users")
+        .where("nickname", req.body.nickname)
+        .select(
+          "rating",
+          "scoreSum",
+          "accuracy",
+          "recentPlay",
+          "playtime",
+          "1stNum",
+          "ap",
+          "fc",
+          "clear",
+        )
+        .forUpdate();
+      if (!user.length) {
+        throw new Error("User not found for record update.");
+      }
+      let ap = 0,
+        fc = 0,
+        clear = 0,
+        medal = Number(req.body.medal);
+      if (isBest) {
+        if (result.length) medal = medal - result[0].medal;
+        if (medal >= 4) {
+          ap = 1;
+          medal -= 4;
+        }
+        if (medal >= 2) {
+          fc = 1;
+          medal -= 2;
+        }
+        if (medal >= 1) {
+          clear = 1;
+        }
+        const allRecords = await trx("trackRecords")
+          .select("nickname")
+          .where("name", req.body.name)
+          .where("isBest", 1)
+          .where("difficulty", req.body.difficultySelection)
+          .orderBy("record", "desc")
+          .limit(1);
+        if (allRecords.length && allRecords[0].nickname == req.body.nickname)
+          isBest = 2;
+      }
+      await trx("users")
+        .where("nickname", req.body.nickname)
+        .update({
+          rating: Number(user[0].rating) + ratingDiff,
+          scoreSum: Number(user[0].scoreSum) + Number(req.body.record),
+          accuracy: (
+            Math.round(
+              ((Number(user[0].accuracy) * Number(user[0].playtime) +
+                Number(req.body.accuracy)) *
+                100) /
+                (Number(user[0].playtime) + 1),
+            ) / 100
+          ).toFixed(2),
+          recentPlay: JSON.stringify(
+            [index, ...JSON.parse(user[0].recentPlay)].slice(0, 10),
+          ),
+          playtime: Number(user[0].playtime) + 1,
+          ap: Number(user[0].ap) + ap,
+          fc: Number(user[0].fc) + fc,
+          clear: Number(user[0].clear) + clear,
+          "1stNum": Number(user[0]["1stNum"]) + (isBest == 2 ? 1 : 0),
+        });
+    });
   } catch (e) {
-    console.error(e);
-    let message;
-    if (e instanceof Error) message = e.message;
-    else message = String(e);
+    signale.error(e);
     res
-      .status(400)
+      .status(500)
       .json(
-        createErrorResponse("failed", "Error occured while updating", message),
+        createErrorResponse(
+          "failed",
+          "Error occured while updating",
+          "Internal server error.",
+        ),
       );
     return;
   }
@@ -1290,87 +1322,85 @@ app.put("/coupon", rateLimit({ windowSec: 300, max: 30, prefix: "coupon" }), asy
       );
     return;
   }
+  // 비즈니스 검증 실패를 트랜잭션 롤백과 함께 전달하기 위한 에러 타입입니다.
+  class CouponError extends Error {
+    constructor(
+      public error: string,
+      public description: string,
+    ) {
+      super(description);
+    }
+  }
+  // 위 가드에서 세션이 확인되었으므로 트랜잭션 클로저에서 사용할 userid를 캡처합니다.
+  const userid = req.session.userid;
   try {
     const code = req.body.code;
-    const couponArr = await knex("codes")
-      .select("reward", "used", "usedUser")
-      .where("code", code);
-    if (couponArr.length != 1) {
-      res
-        .status(400)
-        .json(
-          createErrorResponse("failed", "Invalid code", "Invalid code sent."),
+    // 동일 코드에 대한 동시 사용을 직렬화하기 위해 트랜잭션 + 행 잠금으로 처리합니다.
+    await knex.transaction(async (trx) => {
+      const couponArr = await trx("codes")
+        .select("reward", "used", "usedUser")
+        .where("code", code)
+        .forUpdate();
+      if (couponArr.length != 1) {
+        throw new CouponError("Invalid code", "Invalid code sent.");
+      }
+      const coupon = couponArr[0];
+      if (coupon.used) {
+        throw new CouponError(
+          "Used code",
+          "The code sent has already been used.",
         );
-      return;
-    }
-    const coupon = couponArr[0];
-    if (coupon.used) {
-      res
-        .status(400)
-        .json(
-          createErrorResponse(
-            "failed",
+      }
+      const usedUser = JSON.parse(coupon.usedUser);
+      if (usedUser) {
+        if (usedUser.indexOf(userid) != -1) {
+          throw new CouponError(
             "Used code",
             "The code sent has already been used.",
-          ),
-        );
+          );
+        }
+      }
+      const reward = JSON.parse(coupon.reward);
+      if (reward.type == "skin") {
+        const statusArr = await trx("users")
+          .select("skins")
+          .where("userid", userid)
+          .forUpdate();
+        const skins = JSON.parse(statusArr[0].skins);
+        if (skins.indexOf(reward.content) != -1) {
+          throw new CouponError("Already have", "User already has the skin.");
+        } else {
+          skins.push(reward.content);
+          await trx("users")
+            .update({ skins: JSON.stringify(skins) })
+            .where("userid", userid);
+        }
+      }
+      if (!reward.nolimit) {
+        await trx("codes").update({ used: 1 }).where("code", code);
+      } else {
+        usedUser.push(userid);
+        await trx("codes")
+          .update({ usedUser: JSON.stringify(usedUser) })
+          .where("code", code);
+      }
+    });
+  } catch (e) {
+    if (e instanceof CouponError) {
+      res
+        .status(400)
+        .json(createErrorResponse("failed", e.error, e.description));
       return;
     }
-    const usedUser = JSON.parse(coupon.usedUser);
-    if (usedUser) {
-      if (usedUser.indexOf(req.session.userid) != -1) {
-        res
-          .status(400)
-          .json(
-            createErrorResponse(
-              "failed",
-              "Used code",
-              "The code sent has already been used.",
-            ),
-          );
-        return;
-      }
-    }
-    const reward = JSON.parse(coupon.reward);
-    if (reward.type == "skin") {
-      const statusArr = await knex("users")
-        .select("skins")
-        .where("userid", req.session.userid);
-      const skins = JSON.parse(statusArr[0].skins);
-      if (skins.indexOf(reward.content) != -1) {
-        res
-          .status(400)
-          .json(
-            createErrorResponse(
-              "failed",
-              "Already have",
-              "User already has the skin.",
-            ),
-          );
-        return;
-      } else {
-        skins.push(reward.content);
-        await knex("users")
-          .update({ skins: JSON.stringify(skins) })
-          .where("userid", req.session.userid);
-      }
-    }
-    if (!reward.nolimit) {
-      await knex("codes").update({ used: 1 }).where("code", code);
-    } else {
-      usedUser.push(req.session.userid);
-      await knex("codes")
-        .update({ usedUser: JSON.stringify(usedUser) })
-        .where("code", code);
-    }
-  } catch (e) {
-    let message;
-    if (e instanceof Error) message = e.message;
-    else message = String(e);
+    signale.error(e);
     res
-      .status(400)
+      .status(500)
       .json(
-        createErrorResponse("failed", "Error occured while loading", message),
+        createErrorResponse(
+          "failed",
+          "Error occured while loading",
+          "Internal server error.",
+        ),
       );
     return;
   }
@@ -1436,72 +1466,78 @@ app.put("/CPLrecord", async (req, res) => {
     return;
   }
   try {
-    let isBest = 0;
-    let gap = 0;
-    const result = await knex("CPLtrackRecords")
-      .select("record")
-      .where("nickname", req.body.nickname)
-      .where("name", req.body.name)
-      .where("isBest", 1)
-      .where("difficulty", req.body.difficulty)
-      .where("id", req.body.id);
-    if (result.length && result[0].record < req.body.record) {
-      isBest = 1;
-      gap = req.body.record - result[0].record;
-      await knex("CPLtrackRecords")
-        .update({
-          isBest: 0,
-        })
+    await knex.transaction(async (trx) => {
+      let isBest = 0;
+      let gap = 0;
+      const result = await trx("CPLtrackRecords")
+        .select("record")
         .where("nickname", req.body.nickname)
         .where("name", req.body.name)
         .where("isBest", 1)
         .where("difficulty", req.body.difficulty)
-        .where("id", req.body.id);
-    }
-    if (!result.length) {
-      isBest = 1;
-      gap = req.body.record;
-    }
-    await knex("CPLtrackRecords").insert({
-      id: req.body.id,
-      name: req.body.name,
-      nickname: req.body.nickname,
-      rank: req.body.rank,
-      record: req.body.record,
-      maxcombo: req.body.maxcombo,
-      difficulty: req.body.difficulty,
-      isBest: isBest,
-    });
-    const total = await knex("CPLTotalTrackRecords")
-      .select("record")
-      .where("nickname", req.body.nickname)
-      .where("name", req.body.name)
-      .where("difficulty", req.body.difficulty);
-    const score = total[0].record + gap;
-    if (total.length) {
-      await knex("CPLTotalTrackRecords")
-        .update({
-          record: score,
-        })
-        .where("nickname", req.body.nickname)
-        .where("name", req.body.name)
-        .where("difficulty", req.body.difficulty);
-    } else {
-      await knex("CPLTotalTrackRecords").insert({
+        .where("id", req.body.id)
+        .forUpdate();
+      if (result.length && result[0].record < req.body.record) {
+        isBest = 1;
+        gap = req.body.record - result[0].record;
+        await trx("CPLtrackRecords")
+          .update({
+            isBest: 0,
+          })
+          .where("nickname", req.body.nickname)
+          .where("name", req.body.name)
+          .where("isBest", 1)
+          .where("difficulty", req.body.difficulty)
+          .where("id", req.body.id);
+      }
+      if (!result.length) {
+        isBest = 1;
+        gap = req.body.record;
+      }
+      await trx("CPLtrackRecords").insert({
+        id: req.body.id,
         name: req.body.name,
         nickname: req.body.nickname,
+        rank: req.body.rank,
         record: req.body.record,
+        maxcombo: req.body.maxcombo,
         difficulty: req.body.difficulty,
+        isBest: isBest,
       });
-    }
+      const total = await trx("CPLTotalTrackRecords")
+        .select("record")
+        .where("nickname", req.body.nickname)
+        .where("name", req.body.name)
+        .where("difficulty", req.body.difficulty)
+        .forUpdate();
+      if (total.length) {
+        // 기존 합산 기록에 신기록 향상분(gap)만 더합니다.
+        await trx("CPLTotalTrackRecords")
+          .update({
+            record: total[0].record + gap,
+          })
+          .where("nickname", req.body.nickname)
+          .where("name", req.body.name)
+          .where("difficulty", req.body.difficulty);
+      } else {
+        await trx("CPLTotalTrackRecords").insert({
+          name: req.body.name,
+          nickname: req.body.nickname,
+          record: req.body.record,
+          difficulty: req.body.difficulty,
+        });
+      }
+    });
   } catch (e) {
-    let message;
-    if (e instanceof Error) message = e.message;
-    else message = String(e);
+    signale.error(e);
     res
-      .status(400)
+      .status(500)
       .json(
-        createErrorResponse("failed", "Error occured while updating", message),
+        createErrorResponse(
+          "failed",
+          "Error occured while updating",
+          "Internal server error.",
+        ),
       );
     return;
   }
