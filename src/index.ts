@@ -579,13 +579,15 @@ app.put("/settings", async (req, res) => {
       .update({ settings: JSON.stringify(req.body.settings) })
       .where("userid", req.session.userid);
   } catch (e) {
-    let message;
-    if (e instanceof Error) message = e.message;
-    else message = String(e);
+    signale.error(e);
     res
-      .status(400)
+      .status(500)
       .json(
-        createErrorResponse("failed", "Error occured while updating", message),
+        createErrorResponse(
+          "failed",
+          "Error occured while updating",
+          "Internal server error.",
+        ),
       );
     return;
   }
@@ -772,13 +774,15 @@ app.put("/tutorial", async (req, res) => {
       .where("userid", req.session.userid);
     observer(`${req.session.userid}`, "TUTORIAL_CLEAR");
   } catch (e) {
-    let message;
-    if (e instanceof Error) message = e.message;
-    else message = String(e);
+    signale.error(e);
     res
-      .status(400)
+      .status(500)
       .json(
-        createErrorResponse("failed", "Error occured while updating", message),
+        createErrorResponse(
+          "failed",
+          "Error occured while updating",
+          "Internal server error.",
+        ),
       );
     return;
   }
@@ -1663,6 +1667,38 @@ app.get("/notice/:lang", async (req, res) => {
   }
   res.status(200).json({ result: "success", data: results[0] });
 });
+
+// 정의되지 않은 경로에 대한 404 처리입니다.
+app.use((req, res) => {
+  res
+    .status(404)
+    .json(createErrorResponse("failed", "Not Found", "Unknown endpoint."));
+});
+
+// 전역 에러 핸들러입니다. 라우트에서 전달된(또는 async 거부로 포워딩된) 오류를
+// 서버측에만 기록하고 클라이언트에는 일반화된 메시지를 반환합니다(스택/내부 정보 노출 방지).
+// Express는 4개 인자를 가진 미들웨어를 에러 핸들러로 인식하므로 next를 유지합니다.
+app.use(
+  (
+    err: unknown,
+    req: express.Request,
+    res: express.Response,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    next: express.NextFunction,
+  ) => {
+    signale.error(err);
+    if (res.headersSent) return;
+    res
+      .status(500)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Internal Server Error",
+          "An unexpected error occurred.",
+        ),
+      );
+  },
+);
 
 app.listen(config.project.port, () => {
   signale.info(new Date());
