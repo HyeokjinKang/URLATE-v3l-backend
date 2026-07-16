@@ -847,7 +847,7 @@ app.put("/playRecord", async (req, res) => {
   // 신원은 세션에서 확정된 값만 신뢰합니다. 클라이언트가 보낸 userid/username은 사용하지 않습니다.
   const nickname: string = results[0].nickname;
 
-  // 트랙 이름은 파일 경로와 DB 조회에 쓰이므로 안전한 형식만 허용합니다.
+  // 파일 이름은 파일 경로와 DB 조회에 쓰이므로 안전한 형식만 허용합니다.
   const fileName = req.body.filename;
   if (!isValidFileName(fileName) || !isValidNickname(nickname)) {
     res
