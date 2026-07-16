@@ -103,6 +103,40 @@ const uuid = () => {
   return tokens[2] + tokens[1] + tokens[0] + tokens[3] + tokens[4];
 };
 
+// Redis 기반 rate limiter. PM2 클러스터 환경에서도 인스턴스 간 카운터가 공유됩니다.
+const rateLimit =
+  (options: { windowSec: number; max: number; prefix: string }) =>
+  async (
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction,
+  ) => {
+    try {
+      const ip = req.ip || req.socket.remoteAddress || "unknown";
+      const key = `ratelimit:${options.prefix}:${ip}`;
+      const count = await redisClient.incr(key);
+      if (count === 1) {
+        await redisClient.expire(key, options.windowSec);
+      }
+      if (count > options.max) {
+        res
+          .status(429)
+          .json(
+            createErrorResponse(
+              "failed",
+              "Too Many Requests",
+              "Rate limit exceeded. Please try again later.",
+            ),
+          );
+        return;
+      }
+    } catch (err) {
+      // Redis 장애 시 요청을 막지 않고 통과시킵니다(가용성 우선). 오류는 기록합니다.
+      signale.error(err);
+    }
+    next();
+  };
+
 // 파일 경로 세그먼트로 안전한 문자열인지 검증합니다(경로 조작 방지).
 const isSafeSegment = (value: unknown): value is string =>
   typeof value === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(value);
@@ -116,6 +150,9 @@ const toFiniteNonNegInt = (value: unknown): number | null => {
 
 // 판정 점수 이론적 상한(정합성 검증용). 실제 최고 기록보다 충분히 큰 값입니다.
 const MAX_SCORE = 100_000_000;
+
+// 전역 rate limit: IP당 분당 요청 수를 제한하여 남용/DoS를 완화합니다.
+app.use(rateLimit({ windowSec: 60, max: 600, prefix: "global" }));
 
 // 파일 경로 세그먼트로 안전한
 
@@ -177,7 +214,7 @@ app.get("/auth/status", async (req, res) => {
   res.status(200).json(createStatusResponse("Logined"));
 });
 
-app.post("/auth/login", async (req, res) => {
+app.post("/auth/login", rateLimit({ windowSec: 300, max: 20, prefix: "login" }), async (req, res) => {
   try {
     if (!req.body.jwt || typeof req.body.jwt.credential !== "string") {
       res
@@ -1197,7 +1234,7 @@ app.get(
   },
 );
 
-app.put("/coupon", async (req, res) => {
+app.put("/coupon", rateLimit({ windowSec: 300, max: 30, prefix: "coupon" }), async (req, res) => {
   if (!req.session.userid) {
     res
       .status(400)
