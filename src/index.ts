@@ -148,6 +148,17 @@ const toFiniteNonNegInt = (value: unknown): number | null => {
   return n;
 };
 
+// 정렬 방향 화이트리스트입니다.
+const SORT_DIRECTIONS = new Set(["asc", "desc"]);
+// trackRecords 정렬 가능 컬럼 화이트리스트입니다.
+const TRACK_ORDER_COLUMNS = new Set([
+  "rank",
+  "record",
+  "maxcombo",
+  "accuracy",
+  "rating",
+]);
+
 // 판정 점수 이론적 상한(정합성 검증용). 실제 최고 기록보다 충분히 큰 값입니다.
 const MAX_SCORE = 100_000_000;
 
@@ -450,8 +461,6 @@ app.get("/profile/:uid", async (req, res) => {
       "explicit",
     )
     .where("userid", req.params.uid);
-  const users = await knex("users").orderBy("rating", "desc");
-  const rank = users.findIndex((user) => user.userid === req.params.uid) + 1;
   if (!results.length) {
     res
       .status(400)
@@ -460,6 +469,12 @@ app.get("/profile/:uid", async (req, res) => {
       );
     return;
   }
+
+  // 전체 유저를 로드하지 않고 COUNT로 순위를 계산합니다(자신보다 rating이 높은 인원 수 + 1).
+  const [{ higher }] = await knex("users")
+    .where("rating", ">", results[0].rating)
+    .count({ higher: "*" });
+  const rank = Number(higher) + 1;
 
   res.status(200).json({ result: "success", user: results[0], rank });
 });
@@ -1216,21 +1231,51 @@ app.get("/bestRecords/:nickname", async (req, res) => {
 app.get(
   "/records/:track/:difficulty/:order/:sort/:nickname",
   async (req, res) => {
+    const order = req.params.order;
+    const sort = (req.params.sort || "").toLowerCase();
+    // orderBy 컬럼/방향을 화이트리스트로 제한합니다(식별자 주입 방지).
+    if (!TRACK_ORDER_COLUMNS.has(order) || !SORT_DIRECTIONS.has(sort)) {
+      res
+        .status(400)
+        .json(
+          createErrorResponse(
+            "failed",
+            "Wrong Format",
+            "Invalid order or sort parameter.",
+          ),
+        );
+      return;
+    }
+
+    // 상위 100개만 조회합니다(전체 로드 방지).
     const results = await knex("trackRecords")
       .select("rank", "record", "maxcombo", "nickname")
       .where("name", req.params.track)
       .where("difficulty", req.params.difficulty)
       .where("isBest", 1)
-      .orderBy(req.params.order, req.params.sort);
-    const rank =
-      results
-        .map((d) => {
-          return d["nickname"];
-        })
-        .indexOf(req.params.nickname) + 1;
-    res
-      .status(200)
-      .json({ result: "success", results: results.slice(0, 100), rank: rank });
+      .orderBy(order, sort)
+      .limit(100);
+
+    // 요청자 순위는 자신의 기록보다 앞선 인원 수를 COUNT로 계산합니다.
+    let rank = 0;
+    const self = await knex("trackRecords")
+      .select(order)
+      .where("name", req.params.track)
+      .where("difficulty", req.params.difficulty)
+      .where("isBest", 1)
+      .where("nickname", req.params.nickname)
+      .first();
+    if (self) {
+      const op = sort === "desc" ? ">" : "<";
+      const [{ better }] = await knex("trackRecords")
+        .where("name", req.params.track)
+        .where("difficulty", req.params.difficulty)
+        .where("isBest", 1)
+        .where(order, op, self[order])
+        .count({ better: "*" });
+      rank = Number(better) + 1;
+    }
+    res.status(200).json({ result: "success", results, rank });
   },
 );
 
@@ -1468,20 +1513,46 @@ app.put("/CPLrecord", async (req, res) => {
 app.get(
   "/CPLrecords/:track/:difficulty/:order/:sort/:nickname",
   async (req, res) => {
+    const order = req.params.order;
+    const sort = (req.params.sort || "").toLowerCase();
+    // CPLTotalTrackRecords는 record 컬럼으로만 정렬을 허용합니다.
+    if (order !== "record" || !SORT_DIRECTIONS.has(sort)) {
+      res
+        .status(400)
+        .json(
+          createErrorResponse(
+            "failed",
+            "Wrong Format",
+            "Invalid order or sort parameter.",
+          ),
+        );
+      return;
+    }
+
     const results = await knex("CPLTotalTrackRecords")
       .select("record", "nickname")
       .where("name", req.params.track)
       .where("difficulty", req.params.difficulty)
-      .orderBy(req.params.order, req.params.sort);
-    const rank =
-      results
-        .map((d) => {
-          return d["nickname"];
-        })
-        .indexOf(req.params.nickname) + 1;
-    res
-      .status(200)
-      .json({ result: "success", results: results.slice(0, 100), rank: rank });
+      .orderBy(order, sort)
+      .limit(100);
+
+    let rank = 0;
+    const self = await knex("CPLTotalTrackRecords")
+      .select("record")
+      .where("name", req.params.track)
+      .where("difficulty", req.params.difficulty)
+      .where("nickname", req.params.nickname)
+      .first();
+    if (self) {
+      const op = sort === "desc" ? ">" : "<";
+      const [{ better }] = await knex("CPLTotalTrackRecords")
+        .where("name", req.params.track)
+        .where("difficulty", req.params.difficulty)
+        .where("record", op, self.record)
+        .count({ better: "*" });
+      rank = Number(better) + 1;
+    }
+    res.status(200).json({ result: "success", results, rank });
   },
 );
 
