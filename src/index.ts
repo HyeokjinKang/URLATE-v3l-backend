@@ -137,22 +137,11 @@ const rateLimit =
     next();
   };
 
-// 파일 경로 세그먼트로 안전한 문자열인지 검증합니다(경로 조작 방지).
 const isValidNickname = (value: unknown): value is string =>
   typeof value === "string" && /^[A-Za-z0-9_-]{5,12}$/.test(value);
 
-// 트랙 이름은 원본 곡 이름이라 특수문자를 포함할 수 있으므로 세그먼트 규칙보다 넓게 허용합니다.
-// 단, 파일 경로 세그먼트로 쓰이기 때문에 경로 구분자/상위 참조/제어문자/널바이트는 금지합니다.
-// (실제 경로 탈출 방지는 호출부의 logsRoot 하위 검사와 함께 이중으로 보장됩니다.)
-const isValidTrackName = (value: unknown): value is string => {
-  if (typeof value !== "string") return false;
-  if (value.length < 1 || value.length > 200) return false;
-  if (value === "." || value === "..") return false;
-  // 경로 구분자(/, \), 제어문자(널바이트 포함)를 금지합니다.
-  // eslint-disable-next-line no-control-regex
-  if (/[/\\\x00-\x1f\x7f]/.test(value)) return false;
-  return true;
-};
+const isValidFileName = (value: unknown): value is string =>
+  typeof value === "string" && /^[a-z0-9]{1,256}$/.test(value);
 
 // 유한한 비음수 정수만 허용합니다(치팅용 이상치 방지).
 const toFiniteNonNegInt = (value: unknown): number | null => {
@@ -859,8 +848,8 @@ app.put("/playRecord", async (req, res) => {
   const nickname: string = results[0].nickname;
 
   // 트랙 이름은 파일 경로와 DB 조회에 쓰이므로 안전한 형식만 허용합니다.
-  const trackName = req.body.name;
-  if (!isValidTrackName(trackName) || !isValidNickname(nickname)) {
+  const fileName = req.body.filename;
+  if (!isValidFileName(fileName) || !isValidNickname(nickname)) {
     res
       .status(400)
       .json(
@@ -969,7 +958,7 @@ app.put("/playRecord", async (req, res) => {
 
   // 로그 경로는 검증된 세그먼트만으로 구성하고 최종 경로가 로그 루트 하위인지 확인합니다.
   const logsRoot = path.resolve(__dirname, "../logs");
-  const logDir = path.resolve(logsRoot, nickname, trackName);
+  const logDir = path.resolve(logsRoot, nickname, fileName);
   if (logDir !== logsRoot && !logDir.startsWith(logsRoot + path.sep)) {
     res
       .status(400)
@@ -997,7 +986,7 @@ app.put("/playRecord", async (req, res) => {
         method: "PUT",
         body: JSON.stringify({
           secret: config.project.secretKey,
-          name: trackName,
+          fileName,
           nickname,
           rank,
           record: score,
@@ -1062,7 +1051,7 @@ app.put("/record", async (req, res) => {
       let difficultyValue = Number(req.body.difficulty);
       const trackRow = await trx("tracks")
         .select("difficulty")
-        .where("name", req.body.name)
+        .where("fileName", req.body.fileName)
         .first();
       if (trackRow) {
         try {
@@ -1085,7 +1074,7 @@ app.put("/record", async (req, res) => {
       const result = await trx("trackRecords")
         .select("record", "medal", "index")
         .where("nickname", req.body.nickname)
-        .where("name", req.body.name)
+        .where("name", req.body.fileName)
         .where("isBest", 1)
         .where("difficulty", req.body.difficultySelection);
       if (result.length && result[0].record < req.body.record) {
@@ -1109,7 +1098,7 @@ app.put("/record", async (req, res) => {
       const ratingBest = await trx("trackRecords")
         .select("rating", "index")
         .where("nickname", req.body.nickname)
-        .where("name", req.body.name)
+        .where("name", req.body.fileName)
         .where("difficulty", req.body.difficultySelection)
         .orderBy("rating", "desc")
         .limit(1);
@@ -1125,7 +1114,7 @@ app.put("/record", async (req, res) => {
         }
       }
       await trx("trackRecords").insert({
-        name: req.body.name,
+        name: req.body.fileName,
         nickname: req.body.nickname,
         rank: req.body.rank,
         record: req.body.record,
@@ -1175,7 +1164,7 @@ app.put("/record", async (req, res) => {
         }
         const allRecords = await trx("trackRecords")
           .select("nickname")
-          .where("name", req.body.name)
+          .where("name", req.body.fileName)
           .where("isBest", 1)
           .where("difficulty", req.body.difficultySelection)
           .orderBy("record", "desc")
