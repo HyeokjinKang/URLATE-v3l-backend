@@ -1,9 +1,9 @@
 declare module "express-session" {
   interface SessionData {
-    userid: unknown;
-    tempName: unknown;
-    email: unknown;
-    picture: unknown;
+    userid?: string;
+    tempName?: string;
+    email?: string;
+    picture?: string;
   }
 }
 

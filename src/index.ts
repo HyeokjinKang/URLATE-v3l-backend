@@ -165,8 +165,6 @@ const MAX_SCORE = 100_000_000;
 // 전역 rate limit: IP당 분당 요청 수를 제한하여 남용/DoS를 완화합니다.
 app.use(rateLimit({ windowSec: 60, max: 600, prefix: "global" }));
 
-// 파일 경로 세그먼트로 안전한
-
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const updateRankHistory = schedule.scheduleJob("59 23 * * *", async () => {
   signale.info(new Date());
