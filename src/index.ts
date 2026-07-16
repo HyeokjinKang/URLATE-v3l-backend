@@ -141,7 +141,7 @@ const isValidNickname = (value: unknown): value is string =>
   typeof value === "string" && /^[A-Za-z0-9_-]{5,12}$/.test(value);
 
 const isValidFileName = (value: unknown): value is string =>
-  typeof value === "string" && /^[a-z0-9]{1,256}$/.test(value);
+  typeof value === "string" && /^[a-z0-9]{1,255}$/.test(value);
 
 // 유한한 비음수 정수만 허용합니다(치팅용 이상치 방지).
 const toFiniteNonNegInt = (value: unknown): number | null => {
