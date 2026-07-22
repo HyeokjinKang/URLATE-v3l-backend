@@ -517,10 +517,10 @@ app.get("/track/:name", async (req, res) => {
   res.status(200).json({ result: "success", track: results });
 });
 
-app.get("/trackInfo/:name", async (req, res) => {
+app.get("/trackInfo/:filename", async (req, res) => {
   const results = await knex("patternInfo")
     .select("bpm", "bullet_density", "note_density", "speed")
-    .where("name", req.params.name);
+    .where("filename", req.params.filename);
   if (!results.length) {
     res
       .status(400)
@@ -1043,7 +1043,7 @@ app.put("/record", async (req, res) => {
       const result = await trx("trackRecords")
         .select("record", "medal", "index")
         .where("nickname", req.body.nickname)
-        .where("name", req.body.fileName)
+        .where("filename", req.body.fileName)
         .where("isBest", 1)
         .where("difficulty", req.body.difficultySelection);
       if (result.length && result[0].record < req.body.record) {
@@ -1067,7 +1067,7 @@ app.put("/record", async (req, res) => {
       const ratingBest = await trx("trackRecords")
         .select("rating", "index")
         .where("nickname", req.body.nickname)
-        .where("name", req.body.fileName)
+        .where("filename", req.body.fileName)
         .where("difficulty", req.body.difficultySelection)
         .orderBy("rating", "desc")
         .limit(1);
@@ -1083,7 +1083,7 @@ app.put("/record", async (req, res) => {
         }
       }
       await trx("trackRecords").insert({
-        name: req.body.fileName,
+        filename: req.body.fileName,
         nickname: req.body.nickname,
         rank: req.body.rank,
         record: req.body.record,
@@ -1133,7 +1133,7 @@ app.put("/record", async (req, res) => {
         }
         const allRecords = await trx("trackRecords")
           .select("nickname")
-          .where("name", req.body.fileName)
+          .where("filename", req.body.fileName)
           .where("isBest", 1)
           .where("difficulty", req.body.difficultySelection)
           .orderBy("record", "desc")
@@ -1183,7 +1183,7 @@ app.put("/record", async (req, res) => {
 app.get("/record/:index", async (req, res) => {
   const results = await knex("trackRecords")
     .select(
-      "name",
+      "filename",
       "rank",
       "record",
       "maxcombo",
@@ -1203,11 +1203,11 @@ app.get("/record/:index", async (req, res) => {
   res.status(200).json({ result: "success", results });
 });
 
-app.get("/record/:filename/:name", async (req, res) => {
+app.get("/record/:filename/:nickname", async (req, res) => {
   const results = await knex("trackRecords")
     .select("rank", "record", "maxcombo", "medal", "difficulty", "date")
-    .where("nickname", req.params.name)
-    .where("name", req.params.filename)
+    .where("nickname", req.params.nickname)
+    .where("filename", req.params.filename)
     .where("isBest", 1)
     .orderBy("difficulty", "DESC");
   if (!results.length) {
@@ -1220,7 +1220,7 @@ app.get("/record/:filename/:name", async (req, res) => {
 app.get("/bestRecords/:nickname", async (req, res) => {
   const results = await knex("trackRecords")
     .select(
-      "name",
+      "filename",
       "rank",
       "record",
       "maxcombo",
@@ -1261,7 +1261,7 @@ app.get(
     // 상위 100개만 조회합니다(전체 로드 방지).
     const results = await knex("trackRecords")
       .select("rank", "record", "maxcombo", "nickname")
-      .where("name", req.params.fileName)
+      .where("filename", req.params.fileName)
       .where("difficulty", req.params.difficulty)
       .where("isBest", 1)
       .orderBy(order, sort)
@@ -1271,7 +1271,7 @@ app.get(
     let rank = 0;
     const self = await knex("trackRecords")
       .select(order)
-      .where("name", req.params.fileName)
+      .where("filename", req.params.fileName)
       .where("difficulty", req.params.difficulty)
       .where("isBest", 1)
       .where("nickname", req.params.nickname)
@@ -1279,7 +1279,7 @@ app.get(
     if (self) {
       const op = sort === "desc" ? ">" : "<";
       const [{ better }] = await knex("trackRecords")
-        .where("name", req.params.fileName)
+        .where("filename", req.params.fileName)
         .where("difficulty", req.params.difficulty)
         .where("isBest", 1)
         .where(order, op, self[order])
@@ -1455,169 +1455,6 @@ app.get("/auth/logout", (req, res) => {
       res.status(200).json(createSuccessResponse("success"));
     }
   });
-});
-
-app.put("/CPLrecord", async (req, res) => {
-  if (req.body.secret !== config.project.secretKey) {
-    res
-      .status(400)
-      .json(
-        createErrorResponse(
-          "failed",
-          "Authorize failed",
-          "Project secret key is not vaild.",
-        ),
-      );
-    return;
-  }
-  try {
-    await knex.transaction(async (trx) => {
-      let isBest = 0;
-      let gap = 0;
-      const result = await trx("CPLtrackRecords")
-        .select("record")
-        .where("nickname", req.body.nickname)
-        .where("name", req.body.name)
-        .where("isBest", 1)
-        .where("difficulty", req.body.difficulty)
-        .where("id", req.body.id)
-        .forUpdate();
-      if (result.length && result[0].record < req.body.record) {
-        isBest = 1;
-        gap = req.body.record - result[0].record;
-        await trx("CPLtrackRecords")
-          .update({
-            isBest: 0,
-          })
-          .where("nickname", req.body.nickname)
-          .where("name", req.body.name)
-          .where("isBest", 1)
-          .where("difficulty", req.body.difficulty)
-          .where("id", req.body.id);
-      }
-      if (!result.length) {
-        isBest = 1;
-        gap = req.body.record;
-      }
-      await trx("CPLtrackRecords").insert({
-        id: req.body.id,
-        name: req.body.name,
-        nickname: req.body.nickname,
-        rank: req.body.rank,
-        record: req.body.record,
-        maxcombo: req.body.maxcombo,
-        difficulty: req.body.difficulty,
-        isBest: isBest,
-      });
-      const total = await trx("CPLTotalTrackRecords")
-        .select("record")
-        .where("nickname", req.body.nickname)
-        .where("name", req.body.name)
-        .where("difficulty", req.body.difficulty)
-        .forUpdate();
-      if (total.length) {
-        // 기존 합산 기록에 신기록 향상분(gap)만 더합니다.
-        await trx("CPLTotalTrackRecords")
-          .update({
-            record: total[0].record + gap,
-          })
-          .where("nickname", req.body.nickname)
-          .where("name", req.body.name)
-          .where("difficulty", req.body.difficulty);
-      } else {
-        await trx("CPLTotalTrackRecords").insert({
-          name: req.body.name,
-          nickname: req.body.nickname,
-          record: req.body.record,
-          difficulty: req.body.difficulty,
-        });
-      }
-    });
-  } catch (e) {
-    signale.error(e);
-    res
-      .status(500)
-      .json(
-        createErrorResponse(
-          "failed",
-          "Error occured while updating",
-          "Internal server error.",
-        ),
-      );
-    return;
-  }
-  res.status(200).json(createSuccessResponse("success"));
-});
-
-app.get(
-  "/CPLrecords/:track/:difficulty/:order/:sort/:nickname",
-  async (req, res) => {
-    const order = req.params.order;
-    const sort = (req.params.sort || "").toLowerCase();
-    // CPLTotalTrackRecords는 record 컬럼으로만 정렬을 허용합니다.
-    if (order !== "record" || !SORT_DIRECTIONS.has(sort)) {
-      res
-        .status(400)
-        .json(
-          createErrorResponse(
-            "failed",
-            "Wrong Format",
-            "Invalid order or sort parameter.",
-          ),
-        );
-      return;
-    }
-
-    const results = await knex("CPLTotalTrackRecords")
-      .select("record", "nickname")
-      .where("name", req.params.track)
-      .where("difficulty", req.params.difficulty)
-      .orderBy(order, sort)
-      .limit(100);
-
-    let rank = 0;
-    const self = await knex("CPLTotalTrackRecords")
-      .select("record")
-      .where("name", req.params.track)
-      .where("difficulty", req.params.difficulty)
-      .where("nickname", req.params.nickname)
-      .first();
-    if (self) {
-      const op = sort === "desc" ? ">" : "<";
-      const [{ better }] = await knex("CPLTotalTrackRecords")
-        .where("name", req.params.track)
-        .where("difficulty", req.params.difficulty)
-        .where("record", op, self.record)
-        .count({ better: "*" });
-      rank = Number(better) + 1;
-    }
-    res.status(200).json({ result: "success", results, rank });
-  },
-);
-
-app.get("/CPLpatternList/:name/:difficulty", async (req, res) => {
-  const results = await knex("CPLpatternInfo")
-    .select(
-      "id",
-      "patternName",
-      "name",
-      "author",
-      "description",
-      "analyzed",
-      "community",
-      "star",
-      "difficulty",
-    )
-    .where("name", req.params.name)
-    .where("difficulty", req.params.difficulty);
-  res.status(200).json({ result: "success", data: results });
-});
-
-app.get("/CPLtrackInfo/:name", async (req, res) => {
-  const results = await knex("CPLpatternInfo")
-    .select("name", "difficulty")
-    .where("name", req.params.name);
-  res.status(200).json({ result: "success", info: results });
 });
 
 app.get("/notice/:lang", async (req, res) => {
