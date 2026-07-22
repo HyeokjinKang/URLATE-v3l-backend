@@ -1043,7 +1043,7 @@ app.put("/record", async (req, res) => {
       const result = await trx("trackRecords")
         .select("record", "medal", "index")
         .where("nickname", req.body.nickname)
-        .where("name", req.body.fileName)
+        .where("filename", req.body.fileName)
         .where("isBest", 1)
         .where("difficulty", req.body.difficultySelection);
       if (result.length && result[0].record < req.body.record) {
@@ -1067,7 +1067,7 @@ app.put("/record", async (req, res) => {
       const ratingBest = await trx("trackRecords")
         .select("rating", "index")
         .where("nickname", req.body.nickname)
-        .where("name", req.body.fileName)
+        .where("filename", req.body.fileName)
         .where("difficulty", req.body.difficultySelection)
         .orderBy("rating", "desc")
         .limit(1);
@@ -1083,7 +1083,7 @@ app.put("/record", async (req, res) => {
         }
       }
       await trx("trackRecords").insert({
-        name: req.body.fileName,
+        filename: req.body.fileName,
         nickname: req.body.nickname,
         rank: req.body.rank,
         record: req.body.record,
@@ -1133,7 +1133,7 @@ app.put("/record", async (req, res) => {
         }
         const allRecords = await trx("trackRecords")
           .select("nickname")
-          .where("name", req.body.fileName)
+          .where("filename", req.body.fileName)
           .where("isBest", 1)
           .where("difficulty", req.body.difficultySelection)
           .orderBy("record", "desc")
@@ -1183,7 +1183,7 @@ app.put("/record", async (req, res) => {
 app.get("/record/:index", async (req, res) => {
   const results = await knex("trackRecords")
     .select(
-      "name",
+      "filename",
       "rank",
       "record",
       "maxcombo",
@@ -1203,11 +1203,11 @@ app.get("/record/:index", async (req, res) => {
   res.status(200).json({ result: "success", results });
 });
 
-app.get("/record/:filename/:name", async (req, res) => {
+app.get("/record/:filename/:nickname", async (req, res) => {
   const results = await knex("trackRecords")
     .select("rank", "record", "maxcombo", "medal", "difficulty", "date")
-    .where("nickname", req.params.name)
-    .where("name", req.params.filename)
+    .where("nickname", req.params.nickname)
+    .where("filename", req.params.filename)
     .where("isBest", 1)
     .orderBy("difficulty", "DESC");
   if (!results.length) {
@@ -1220,7 +1220,7 @@ app.get("/record/:filename/:name", async (req, res) => {
 app.get("/bestRecords/:nickname", async (req, res) => {
   const results = await knex("trackRecords")
     .select(
-      "name",
+      "filename",
       "rank",
       "record",
       "maxcombo",
@@ -1261,7 +1261,7 @@ app.get(
     // 상위 100개만 조회합니다(전체 로드 방지).
     const results = await knex("trackRecords")
       .select("rank", "record", "maxcombo", "nickname")
-      .where("name", req.params.fileName)
+      .where("filename", req.params.fileName)
       .where("difficulty", req.params.difficulty)
       .where("isBest", 1)
       .orderBy(order, sort)
@@ -1271,7 +1271,7 @@ app.get(
     let rank = 0;
     const self = await knex("trackRecords")
       .select(order)
-      .where("name", req.params.fileName)
+      .where("filename", req.params.fileName)
       .where("difficulty", req.params.difficulty)
       .where("isBest", 1)
       .where("nickname", req.params.nickname)
@@ -1279,7 +1279,7 @@ app.get(
     if (self) {
       const op = sort === "desc" ? ">" : "<";
       const [{ better }] = await knex("trackRecords")
-        .where("name", req.params.fileName)
+        .where("filename", req.params.fileName)
         .where("difficulty", req.params.difficulty)
         .where("isBest", 1)
         .where(order, op, self[order])
