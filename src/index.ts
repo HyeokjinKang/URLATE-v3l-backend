@@ -517,10 +517,10 @@ app.get("/track/:name", async (req, res) => {
   res.status(200).json({ result: "success", track: results });
 });
 
-app.get("/trackInfo/:name", async (req, res) => {
+app.get("/trackInfo/:filename", async (req, res) => {
   const results = await knex("patternInfo")
     .select("bpm", "bullet_density", "note_density", "speed")
-    .where("name", req.params.name);
+    .where("filename", req.params.filename);
   if (!results.length) {
     res
       .status(400)
