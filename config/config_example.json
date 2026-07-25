@@ -28,6 +28,24 @@
     "saveUninitialized": false,
     "domain": "example.com"
   },
+  "cache": {
+    "enabled": true,
+    "ttl": {
+      "tracks": 600,
+      "trackInfo": 600,
+      "teamProfile": 600,
+      "notice": 300,
+      "user": 300,
+      "authStatus": 1800,
+      "profilePic": 300,
+      "bestRecord": 300,
+      "record": 60,
+      "leaderboard": 60,
+      "ranking": 60,
+      "profile": 30,
+      "achievements": 3600
+    }
+  },
   "google": {
     "clientId": "GOOGLE CLIENT ID",
     "clientSecret": "GOOGLE CLIENT SECRET"

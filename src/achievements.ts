@@ -1,8 +1,8 @@
 import fetch from "node-fetch";
-import { URLATEConfig } from "./types/config.schema";
 import signale from "signale";
 
-const config: URLATEConfig = require(__dirname + "/../config/config.json");
+import config from "./config";
+import { getOrSet, invalidate, keys } from "./cache";
 
 const knex = require("knex")({
   client: "mysql2",
@@ -103,19 +103,26 @@ const achievedIndex = async (context: string, data?: Data) => {
 export const observer = async (
   userid: string,
   context: string,
-  data?: Data
+  data?: Data,
 ) => {
-  const userData = await knex("users").where("userid", userid);
+  // 필요한 컬럼만 읽습니다(기존에는 users 행 전체를 SELECT 했습니다).
+  const userData = await knex("users")
+    .select("achievements", "ownedAlias", "banner", "alias")
+    .where("userid", userid);
+  if (!userData.length) {
+    signale.debug(`Achievement observer got unknown userid ${userid}.`);
+    return;
+  }
   const achievements = new Set(JSON.parse(userData[0].achievements));
 
   // Get achievement index array from data. It will be [] if there is no achievement.
   const index: number[] = await achievedIndex(context, data);
-  
+
   // For RANK context, we need to process all achievements to update aliases,
   // but only send notifications for new achievements
   let filteredIndex: number[];
   let newAchievements: number[];
-  
+
   if (context === "RANK") {
     filteredIndex = index;
     newAchievements = index.filter((e) => !achievements.has(e));
@@ -123,7 +130,7 @@ export const observer = async (
     filteredIndex = index.filter((e) => !achievements.has(e));
     newAchievements = filteredIndex;
   }
-  
+
   // Return early only if there's nothing to process at all
   // For RANK context, continue even if newAchievements is empty (to update aliases)
   if (!filteredIndex.length) return;
@@ -131,12 +138,21 @@ export const observer = async (
   const achievementsList: Array<Achievement> = [];
   for (const i of newAchievements) {
     // Achieved!
-    knex("achievements").where("index", i).increment("count");
+    knex("achievements")
+      .where("index", i)
+      .increment("count")
+      .catch((err: Error) => signale.error(err));
     achievements.add(i);
     // TODO: Find more elegant way to get i18n-ed data
-    const achievement = await knex("achievements")
-      .select("title_ko", "title_en", "detail_ko", "detail_en", "rewards")
-      .where("index", i);
+    // 업적 메타데이터는 사실상 불변이므로 캐싱해 기록 제출 경로의 조회를 줄입니다.
+    const achievement = await getOrSet<Achievement[]>(
+      "achievements",
+      keys.achievement(i),
+      () =>
+        knex("achievements")
+          .select("title_ko", "title_en", "detail_ko", "detail_en", "rewards")
+          .where("index", i),
+    );
     achievementsList.push(achievement[0]);
   }
 
@@ -183,6 +199,9 @@ export const observer = async (
     .catch((err: Error) => {
       signale.error(err);
     });
+
+  // 칭호·배너가 바뀌었으므로 프로필 캐시를 비웁니다.
+  await invalidate(keys.profile(userid), keys.user(userid));
 
   // Send achievement data to game server only if there are new achievements
   if (achievementsList.length > 0) {

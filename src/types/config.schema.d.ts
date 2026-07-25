@@ -17,6 +17,7 @@ export interface URLATEConfig {
   database: Database;
   redis: Redis;
   session: Session;
+  cache?: Cache;
   google: GoogleAPI;
 }
 /**
@@ -121,6 +122,73 @@ export interface Session {
    * 세션 쿠키의 도메인입니다.
    */
   domain: string;
+}
+/**
+ * Redis 캐시 설정입니다. 생략하면 캐시가 켜진 상태로 기본 TTL이 적용됩니다.
+ */
+export interface Cache {
+  /**
+   * Redis 읽기 캐시 사용 여부입니다. false로 두면 모든 조회가 MySQL로 직행합니다.
+   */
+  enabled?: boolean;
+  ttl?: CacheTTL;
+}
+/**
+ * 캐시 종류별 유효 시간(초)입니다. 지정하지 않은 항목은 기본값을 사용합니다.
+ */
+export interface CacheTTL {
+  /**
+   * 곡 목록(/tracks, /track) 캐시 TTL입니다.
+   */
+  tracks?: number;
+  /**
+   * 패턴 정보(/trackInfo) 캐시 TTL입니다.
+   */
+  trackInfo?: number;
+  /**
+   * 팀 프로필(/teamProfile) 캐시 TTL입니다.
+   */
+  teamProfile?: number;
+  /**
+   * 공지(/notice) 캐시 TTL입니다.
+   */
+  notice?: number;
+  /**
+   * 본인 정보(/user) 캐시 TTL입니다. 설정 변경 시 즉시 무효화됩니다.
+   */
+  user?: number;
+  /**
+   * 가입 여부(/auth/status) 캐시 TTL입니다. 가입 시 즉시 무효화됩니다.
+   */
+  authStatus?: number;
+  /**
+   * 프로필 사진(/profilePic) 캐시 TTL입니다.
+   */
+  profilePic?: number;
+  /**
+   * 개인 최고 기록(/record/:filename/:nickname, /bestRecords) 캐시 TTL입니다. 기록 제출 시 즉시 무효화됩니다.
+   */
+  bestRecord?: number;
+  /**
+   * 개별 기록(/record/:index) 캐시 TTL입니다.
+   */
+  record?: number;
+  /**
+   * 곡별 순위표(/records) 캐시 TTL입니다. 해당 곡 기록 제출 시 즉시 무효화됩니다.
+   */
+  leaderboard?: number;
+  /**
+   * 전체 랭킹(/ranking) 캐시 TTL입니다.
+   */
+  ranking?: number;
+  /**
+   * 프로필(/profile) 캐시 TTL입니다.
+   */
+  profile?: number;
+  /**
+   * 업적 마스터 데이터 캐시 TTL입니다.
+   */
+  achievements?: number;
 }
 /**
  * Google API 설정입니다.

@@ -1,7 +1,6 @@
 import cookieParser from "cookie-parser";
 import express from "express";
 import session from "express-session";
-import { createClient } from "redis";
 import { RedisStore } from "connect-redis";
 import signale from "signale";
 import fetch from "node-fetch";
@@ -12,32 +11,30 @@ import path from "path";
 import { OAuth2Client } from "google-auth-library";
 import Knex from "knex";
 
-import { URLATEConfig, SimpleResponse } from "./types/config.schema";
+import { SimpleResponse } from "./types/config.schema";
 import {
   createSuccessResponse,
   createErrorResponse,
   createStatusResponse,
 } from "./api-response";
 import { observer } from "./achievements";
+import config from "./config";
+import { redisClient } from "./redis";
+import { getOrSet, invalidate, invalidateGroup, keys } from "./cache";
+import {
+  acquireRebuildLock,
+  countHigherRating,
+  rebuild as rebuildRatingIndex,
+  releaseRebuildLock,
+  setRating,
+} from "./rating-index";
 
 import settingsConfig from "../config/settings.json";
-
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const config: URLATEConfig = require(__dirname + "/../config/config.json");
 
 const gidClient = new OAuth2Client(config.google.clientId);
 
 const app = express();
 app.locals.pretty = true;
-
-const redisClient = createClient({
-  socket: {
-    host: config.redis.host,
-    port: config.redis.port,
-  },
-  username: config.redis.username,
-  password: config.redis.password,
-});
 
 const redisStore = new RedisStore({
   client: redisClient,
@@ -81,14 +78,6 @@ app.use(sessionMiddleware);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-
-redisClient.on("connect", () => {
-  signale.success("Connected to redis server.");
-});
-
-redisClient.on("error", (err) => {
-  signale.error(err);
-});
 
 const gidVerify = async (token: string, clientId: string) => {
   const ticket = await gidClient.verifyIdToken({
@@ -169,13 +158,32 @@ const MAX_SCORE = 200_000_000;
 // 전역 rate limit: IP당 분당 요청 수를 제한하여 남용/DoS를 완화합니다.
 app.use(rateLimit({ windowSec: 60, max: 600, prefix: "global" }));
 
+// rating 인덱스(ZSET)를 users 테이블에서 다시 채웁니다.
+// 최초 기동이나 Redis 재시작 이후를 대비한 복구 경로입니다.
+// 성공한 뒤에도 락을 만료될 때까지 그대로 두어, 인덱스가 빈 동안 요청이 몰려도
+// users 전체 조회가 연달아 발생하지 않게 합니다(디바운스).
+const rebuildRatingIndexIfNeeded = async () => {
+  if (!(await acquireRebuildLock())) return;
+  try {
+    const users = await knex("users").select("userid", "rating");
+    await rebuildRatingIndex(users);
+  } catch (err) {
+    signale.error(err);
+    // 실패한 시도는 곧바로 다시 시도할 수 있도록 락을 풉니다.
+    await releaseRebuildLock();
+  }
+};
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const updateRankHistory = schedule.scheduleJob("59 23 * * *", async () => {
   signale.info(new Date());
   signale.pending(`Updating rank history...`);
   const users = await knex("users")
-    .select("userid", "rankHistory")
+    .select("userid", "rankHistory", "rating")
     .orderBy("rating", "desc");
+  // 하루 한 번 rating 인덱스를 통째로 다시 만들어 증분 갱신에서 생길 수 있는
+  // 누락을 바로잡습니다.
+  await rebuildRatingIndex(users);
   for (let i = 0; i < users.length; i++) {
     const history = [...JSON.parse(users[i].rankHistory), i + 1];
     await knex("users")
@@ -209,15 +217,25 @@ const updateRankHistory = schedule.scheduleJob("59 23 * * *", async () => {
 });
 
 app.get("/auth/status", async (req, res) => {
-  if (!req.session.userid) {
+  const userid = req.session.userid;
+  if (!userid) {
     res.status(200).json(createStatusResponse("Not logined"));
     return;
   }
 
-  const results = await knex("users")
-    .select("userid", "nickname")
-    .where("userid", req.session.userid);
-  if (!results[0]) {
+  // 가입 여부는 한번 참이 되면 되돌아가지 않으므로 길게 캐싱해도 안전합니다.
+  // (가입 시점에 /auth/join에서 무효화합니다.)
+  const registered = await getOrSet(
+    "authStatus",
+    keys.authStatus(userid),
+    async () => {
+      const results = await knex("users")
+        .select("userid")
+        .where("userid", userid);
+      return results.length > 0;
+    },
+  );
+  if (!registered) {
     res
       .status(200)
       .json({ status: "Not registered", tempName: req.session.tempName });
@@ -357,6 +375,9 @@ app.post("/auth/join", async (req, res) => {
       achievements: "[]",
       explicit: 0,
     });
+    // 가입 즉시 로그인 상태로 보이도록 가입 여부 캐시를 비웁니다.
+    await invalidate(keys.authStatus(req.session.userid));
+    await setRating(req.session.userid, 0);
     delete req.session.tempName;
     req.session.save(() => {
       res.status(200).json(createSuccessResponse("success"));
@@ -375,7 +396,8 @@ app.post("/auth/join", async (req, res) => {
 });
 
 app.get("/user", async (req, res) => {
-  if (!req.session.userid) {
+  const userid = req.session.userid;
+  if (!userid) {
     res
       .status(400)
       .json(
@@ -388,17 +410,25 @@ app.get("/user", async (req, res) => {
     return;
   }
 
-  const results = await knex("users")
-    .select(
-      "nickname",
-      "settings",
-      "skins",
-      "userid",
-      "tutorial",
-      "picture",
-      "explicit",
-    )
-    .where("userid", req.session.userid);
+  // 본인 데이터이므로 키에 userid를 포함해 유저 간 교차 노출을 막습니다.
+  // 설정/튜토리얼/쿠폰/프로필 변경 시 즉시 무효화합니다.
+  const results = await getOrSet(
+    "user",
+    keys.user(userid),
+    () =>
+      knex("users")
+        .select(
+          "nickname",
+          "settings",
+          "skins",
+          "userid",
+          "tutorial",
+          "picture",
+          "explicit",
+        )
+        .where("userid", userid),
+    { cacheEmpty: false },
+  );
   if (!results.length) {
     res
       .status(400)
@@ -416,28 +446,35 @@ app.get("/user", async (req, res) => {
 });
 
 app.get("/profile/:uid", async (req, res) => {
-  const results = await knex("users")
-    .select(
-      "nickname",
-      "skins",
-      "picture",
-      "background",
-      "alias",
-      "rating",
-      "rankHistory",
-      "banner",
-      "recentPlay",
-      "scoreSum",
-      "accuracy",
-      "playtime",
-      "1stNum",
-      "ap",
-      "fc",
-      "clear",
-      "ownedAlias",
-      "explicit",
-    )
-    .where("userid", req.params.uid);
+  const uid = req.params.uid;
+  const results = await getOrSet(
+    "profile",
+    keys.profile(uid),
+    () =>
+      knex("users")
+        .select(
+          "nickname",
+          "skins",
+          "picture",
+          "background",
+          "alias",
+          "rating",
+          "rankHistory",
+          "banner",
+          "recentPlay",
+          "scoreSum",
+          "accuracy",
+          "playtime",
+          "1stNum",
+          "ap",
+          "fc",
+          "clear",
+          "ownedAlias",
+          "explicit",
+        )
+        .where("userid", uid),
+    { cacheEmpty: false },
+  );
   if (!results.length) {
     res
       .status(400)
@@ -447,19 +484,31 @@ app.get("/profile/:uid", async (req, res) => {
     return;
   }
 
-  // 전체 유저를 로드하지 않고 COUNT로 순위를 계산합니다(자신보다 rating이 높은 인원 수 + 1).
-  const [{ higher }] = await knex("users")
-    .where("rating", ">", results[0].rating)
-    .count({ higher: "*" });
-  const rank = Number(higher) + 1;
+  // 순위는 Redis Sorted Set으로 O(log N)에 계산합니다.
+  // ZCOUNT는 SQL의 COUNT(*) WHERE rating > ? 와 의미가 같아 동점자 처리도 동일합니다.
+  const rating = Number(results[0].rating);
+  let higher = await countHigherRating(rating);
+  if (higher === null) {
+    // 인덱스가 아직 없으면(최초 기동·Redis 재시작) DB로 폴백하고 백그라운드에서 채웁니다.
+    const [row] = await knex("users")
+      .where("rating", ">", results[0].rating)
+      .count({ higher: "*" });
+    higher = Number(row.higher);
+    rebuildRatingIndexIfNeeded().catch((err) => signale.error(err));
+  }
+  const rank = higher + 1;
 
   res.status(200).json({ result: "success", user: results[0], rank });
 });
 
 app.get("/profilePic/:username", async (req, res) => {
-  const results = await knex("users")
-    .select("picture")
-    .where("nickname", req.params.username);
+  const username = req.params.username;
+  const results = await getOrSet(
+    "profilePic",
+    keys.profilePic(username),
+    () => knex("users").select("picture").where("nickname", username),
+    { cacheEmpty: false },
+  );
   if (!results.length) {
     res
       .status(400)
@@ -473,13 +522,20 @@ app.get("/profilePic/:username", async (req, res) => {
 });
 
 app.get("/tracks", async (req, res) => {
-  const results = await knex("tracks").select(
-    "name",
-    "fileName",
-    "producer",
-    "bpm",
-    "difficulty",
-    "originalName",
+  // 모든 페이지 진입마다 호출되지만 곡이 추가될 때만 바뀌는 데이터입니다.
+  const results = await getOrSet(
+    "tracks",
+    keys.tracksAll(),
+    () =>
+      knex("tracks").select(
+        "name",
+        "fileName",
+        "producer",
+        "bpm",
+        "difficulty",
+        "originalName",
+      ),
+    { cacheEmpty: false },
   );
   if (!results.length) {
     res
@@ -498,9 +554,23 @@ app.get("/tracks", async (req, res) => {
 });
 
 app.get("/track/:name", async (req, res) => {
-  const results = await knex("tracks")
-    .select("name", "fileName", "producer", "bpm", "difficulty", "originalName")
-    .where("name", req.params.name);
+  const name = req.params.name;
+  const results = await getOrSet(
+    "tracks",
+    keys.track(name),
+    () =>
+      knex("tracks")
+        .select(
+          "name",
+          "fileName",
+          "producer",
+          "bpm",
+          "difficulty",
+          "originalName",
+        )
+        .where("name", name),
+    { cacheEmpty: false },
+  );
   if (!results.length) {
     res
       .status(400)
@@ -518,9 +588,17 @@ app.get("/track/:name", async (req, res) => {
 });
 
 app.get("/trackInfo/:filename", async (req, res) => {
-  const results = await knex("patternInfo")
-    .select("bpm", "bullet_density", "note_density", "speed")
-    .where("filename", req.params.filename);
+  // 곡을 고를 때마다 호출되지만 패턴이 갱신될 때만 바뀌는 데이터입니다.
+  const filename = req.params.filename;
+  const results = await getOrSet(
+    "trackInfo",
+    keys.trackInfo(filename),
+    () =>
+      knex("patternInfo")
+        .select("bpm", "bullet_density", "note_density", "speed")
+        .where("filename", filename),
+    { cacheEmpty: false },
+  );
   if (!results.length) {
     res
       .status(400)
@@ -537,7 +615,8 @@ app.get("/trackInfo/:filename", async (req, res) => {
 });
 
 app.put("/settings", async (req, res) => {
-  if (!req.session.userid) {
+  const userid = req.session.userid;
+  if (!userid) {
     res
       .status(400)
       .json(
@@ -552,7 +631,8 @@ app.put("/settings", async (req, res) => {
   try {
     await knex("users")
       .update({ settings: JSON.stringify(req.body.settings) })
-      .where("userid", req.session.userid);
+      .where("userid", userid);
+    await invalidate(keys.user(userid));
   } catch (e) {
     signale.error(e);
     res
@@ -585,7 +665,7 @@ app.put("/profile/:element", async (req, res) => {
   try {
     const userid = req.session.userid ? req.session.userid : req.body.userid;
     const users = await knex("users")
-      .select("explicit", "ownedAlias", "banner")
+      .select("explicit", "ownedAlias", "banner", "nickname")
       .where("userid", userid);
     if (!users.length) {
       res
@@ -712,6 +792,12 @@ app.put("/profile/:element", async (req, res) => {
           );
         return;
     }
+    // 변경된 프로필이 곧바로 보이도록 관련 캐시를 비웁니다.
+    await invalidate(
+      keys.profile(userid),
+      keys.user(userid),
+      keys.profilePic(users[0].nickname),
+    );
   } catch (e) {
     signale.error(e);
     res
@@ -729,7 +815,8 @@ app.put("/profile/:element", async (req, res) => {
 });
 
 app.put("/tutorial", async (req, res) => {
-  if (!req.session.userid) {
+  const userid = req.session.userid;
+  if (!userid) {
     res
       .status(400)
       .json(
@@ -742,10 +829,9 @@ app.put("/tutorial", async (req, res) => {
     return;
   }
   try {
-    await knex("users")
-      .update({ tutorial: 1 })
-      .where("userid", req.session.userid);
-    observer(`${req.session.userid}`, "TUTORIAL_CLEAR");
+    await knex("users").update({ tutorial: 1 }).where("userid", userid);
+    await invalidate(keys.user(userid), keys.profile(userid));
+    observer(`${userid}`, "TUTORIAL_CLEAR");
   } catch (e) {
     signale.error(e);
     res
@@ -763,9 +849,13 @@ app.put("/tutorial", async (req, res) => {
 });
 
 app.get("/teamProfile/:name", async (req, res) => {
-  const results = await knex("teamProfiles")
-    .select("data")
-    .where("name", req.params.name);
+  const name = req.params.name;
+  const results = await getOrSet(
+    "teamProfile",
+    keys.teamProfile(name),
+    () => knex("teamProfiles").select("data").where("name", name),
+    { cacheEmpty: false },
+  );
   if (!results.length) {
     res
       .status(400)
@@ -1013,6 +1103,9 @@ app.put("/record", async (req, res) => {
       );
     return;
   }
+  // 트랜잭션 커밋 이후에 캐시를 비우기 위해 갱신된 값을 밖으로 꺼냅니다.
+  let updatedUserid: string | null = null;
+  let updatedRating = 0;
   try {
     // read-modify-write 경쟁 조건 방지를 위해 트랜잭션 + 사용자 행 잠금으로 처리합니다.
     await knex.transaction(async (trx) => {
@@ -1100,6 +1193,7 @@ app.put("/record", async (req, res) => {
       const user = await trx("users")
         .where("nickname", req.body.nickname)
         .select(
+          "userid",
           "rating",
           "scoreSum",
           "accuracy",
@@ -1141,10 +1235,12 @@ app.put("/record", async (req, res) => {
         if (allRecords.length && allRecords[0].nickname == req.body.nickname)
           isBest = 2;
       }
+      updatedUserid = String(user[0].userid);
+      updatedRating = Number(user[0].rating) + ratingDiff;
       await trx("users")
         .where("nickname", req.body.nickname)
         .update({
-          rating: Number(user[0].rating) + ratingDiff,
+          rating: updatedRating,
           scoreSum: Number(user[0].scoreSum) + Number(req.body.record),
           accuracy: (
             Math.round(
@@ -1177,25 +1273,54 @@ app.put("/record", async (req, res) => {
       );
     return;
   }
+
+  // 커밋이 끝난 뒤에만 캐시를 정리합니다. 방금 남긴 기록이 즉시 보여야 하므로
+  // TTL 만료를 기다리지 않고 관련 키를 직접 비웁니다.
+  try {
+    await invalidate(
+      keys.bestRecord(req.body.nickname, req.body.fileName),
+      keys.bestRecords(req.body.nickname),
+      keys.ranking("asc"),
+      keys.ranking("desc"),
+      updatedUserid ? keys.profile(updatedUserid) : null,
+    );
+    await invalidateGroup(
+      keys.leaderboardGroup(req.body.fileName, req.body.difficultySelection),
+    );
+    if (updatedUserid) await setRating(updatedUserid, updatedRating);
+  } catch (e) {
+    // 캐시 정리 실패가 기록 저장 성공을 뒤집지는 않습니다.
+    signale.error(e);
+  }
+
   res.status(200).json(createSuccessResponse("success"));
 });
 
 app.get("/record/:index", async (req, res) => {
-  const results = await knex("trackRecords")
-    .select(
-      "filename",
-      "rank",
-      "record",
-      "maxcombo",
-      "medal",
-      "difficulty",
-      "date",
-      "judge",
-      "isBest",
-      "accuracy",
-      "rating",
-    )
-    .where("index", req.params.index);
+  // 프로필의 최근 플레이 10건이 한꺼번에 호출합니다. isBest/rating은 이후 플레이로
+  // 바뀔 수 있어 짧은 TTL만 적용하고 별도 무효화는 하지 않습니다.
+  const index = req.params.index;
+  const results = await getOrSet(
+    "record",
+    keys.record(index),
+    () =>
+      knex("trackRecords")
+        .select(
+          "filename",
+          "rank",
+          "record",
+          "maxcombo",
+          "medal",
+          "difficulty",
+          "date",
+          "judge",
+          "isBest",
+          "accuracy",
+          "rating",
+        )
+        .where("index", index),
+    { cacheEmpty: false },
+  );
   if (!results.length) {
     res.status(200).json(createSuccessResponse("empty"));
     return;
@@ -1204,12 +1329,22 @@ app.get("/record/:index", async (req, res) => {
 });
 
 app.get("/record/:filename/:nickname", async (req, res) => {
-  const results = await knex("trackRecords")
-    .select("rank", "record", "maxcombo", "medal", "difficulty", "date")
-    .where("nickname", req.params.nickname)
-    .where("filename", req.params.filename)
-    .where("isBest", 1)
-    .orderBy("difficulty", "DESC");
+  // 곡 선택 화면이 트랙 수만큼 병렬 호출하는 가장 뜨거운 경로입니다.
+  // 본인이 기록을 갱신할 때만 바뀌므로 /record 쓰기에서 정확히 무효화합니다.
+  const { filename, nickname } = req.params;
+  const results = await getOrSet(
+    "bestRecord",
+    keys.bestRecord(nickname, filename),
+    () =>
+      knex("trackRecords")
+        .select("rank", "record", "maxcombo", "medal", "difficulty", "date")
+        .where("nickname", nickname)
+        .where("filename", filename)
+        .where("isBest", 1)
+        .orderBy("difficulty", "DESC"),
+    // 아직 플레이하지 않은 곡의 빈 결과도 캐싱합니다.
+    // 곡 선택 화면에서는 이 경우가 오히려 다수이며, 그대로 두면 캐시 의미가 없습니다.
+  );
   if (!results.length) {
     res.status(200).json(createSuccessResponse("empty"));
     return;
@@ -1218,25 +1353,33 @@ app.get("/record/:filename/:nickname", async (req, res) => {
 });
 
 app.get("/bestRecords/:nickname", async (req, res) => {
-  const results = await knex("trackRecords")
-    .select(
-      "filename",
-      "rank",
-      "record",
-      "maxcombo",
-      "medal",
-      "difficulty",
-      "date",
-      "judge",
-      "isBest",
-      "accuracy",
-      "rating",
-    )
-    .where("nickname", req.params.nickname)
-    .whereNot("rating", 0)
-    .orderBy("difficulty", "desc")
-    .orderBy("rating", "desc");
-  res.status(200).json({ result: "success", results: results.slice(0, 10) });
+  const nickname = req.params.nickname;
+  const results = await getOrSet(
+    "bestRecord",
+    keys.bestRecords(nickname),
+    () =>
+      knex("trackRecords")
+        .select(
+          "filename",
+          "rank",
+          "record",
+          "maxcombo",
+          "medal",
+          "difficulty",
+          "date",
+          "judge",
+          "isBest",
+          "accuracy",
+          "rating",
+        )
+        .where("nickname", nickname)
+        .whereNot("rating", 0)
+        .orderBy("difficulty", "desc")
+        .orderBy("rating", "desc")
+        // 응답은 어차피 10건만 사용하므로 DB에서부터 잘라 옵니다.
+        .limit(10),
+  );
+  res.status(200).json({ result: "success", results });
 });
 
 app.get(
@@ -1258,34 +1401,50 @@ app.get(
       return;
     }
 
+    const { fileName, difficulty, nickname } = req.params;
+    // 순위표와 개인 순위는 같은 곡·난이도의 기록이 갱신될 때 함께 무효화되어야 하므로
+    // 하나의 캐시 그룹으로 묶습니다.
+    const group = keys.leaderboardGroup(fileName, difficulty);
+
     // 상위 100개만 조회합니다(전체 로드 방지).
-    const results = await knex("trackRecords")
-      .select("rank", "record", "maxcombo", "nickname")
-      .where("filename", req.params.fileName)
-      .where("difficulty", req.params.difficulty)
-      .where("isBest", 1)
-      .orderBy(order, sort)
-      .limit(100);
+    const results = await getOrSet(
+      "leaderboard",
+      keys.leaderboard(fileName, difficulty, order, sort),
+      () =>
+        knex("trackRecords")
+          .select("rank", "record", "maxcombo", "nickname")
+          .where("filename", fileName)
+          .where("difficulty", difficulty)
+          .where("isBest", 1)
+          .orderBy(order, sort)
+          .limit(100),
+      { group },
+    );
 
     // 요청자 순위는 자신의 기록보다 앞선 인원 수를 COUNT로 계산합니다.
-    let rank = 0;
-    const self = await knex("trackRecords")
-      .select(order)
-      .where("filename", req.params.fileName)
-      .where("difficulty", req.params.difficulty)
-      .where("isBest", 1)
-      .where("nickname", req.params.nickname)
-      .first();
-    if (self) {
-      const op = sort === "desc" ? ">" : "<";
-      const [{ better }] = await knex("trackRecords")
-        .where("filename", req.params.fileName)
-        .where("difficulty", req.params.difficulty)
-        .where("isBest", 1)
-        .where(order, op, self[order])
-        .count({ better: "*" });
-      rank = Number(better) + 1;
-    }
+    const rank = await getOrSet(
+      "leaderboard",
+      keys.leaderboardRank(fileName, difficulty, order, sort, nickname),
+      async () => {
+        const self = await knex("trackRecords")
+          .select(order)
+          .where("filename", fileName)
+          .where("difficulty", difficulty)
+          .where("isBest", 1)
+          .where("nickname", nickname)
+          .first();
+        if (!self) return 0;
+        const op = sort === "desc" ? ">" : "<";
+        const [{ better }] = await knex("trackRecords")
+          .where("filename", fileName)
+          .where("difficulty", difficulty)
+          .where("isBest", 1)
+          .where(order, op, self[order])
+          .count({ better: "*" });
+        return Number(better) + 1;
+      },
+      { group },
+    );
     res.status(200).json({ result: "success", results, rank });
   },
 );
@@ -1369,6 +1528,8 @@ app.put(
             .where("code", code);
         }
       });
+      // 스킨 지급이 곧바로 반영되도록 본인 정보 캐시를 비웁니다.
+      await invalidate(keys.user(userid), keys.profile(userid));
     } catch (e) {
       if (e instanceof CouponError) {
         res
@@ -1413,18 +1574,23 @@ app.get("/ranking/:sort/:limit", async (req, res) => {
   );
   let results;
   try {
-    results = await knex("users")
-      .select(
-        "nickname",
-        "rating",
-        "picture",
-        "userid",
-        "accuracy",
-        "scoreSum",
-        "explicit",
-      )
-      .orderBy("rating", sort)
-      .limit(limit);
+    // limit이 달라도 정렬 결과의 앞부분을 자르는 것이므로,
+    // 상위 100개를 한 번만 캐싱한 뒤 잘라서 응답합니다.
+    const top = await getOrSet("ranking", keys.ranking(sort), () =>
+      knex("users")
+        .select(
+          "nickname",
+          "rating",
+          "picture",
+          "userid",
+          "accuracy",
+          "scoreSum",
+          "explicit",
+        )
+        .orderBy("rating", sort)
+        .limit(100),
+    );
+    results = top.slice(0, limit);
   } catch (e) {
     signale.error(e);
     res
@@ -1467,10 +1633,13 @@ app.get("/notice/:lang", async (req, res) => {
       );
     return;
   }
-  const results = await knex("notice")
-    .select("date", `title_${req.params.lang}`, `url_${req.params.lang}`)
-    .orderBy("date", "desc")
-    .limit(1);
+  const lang = req.params.lang;
+  const results = await getOrSet("notice", keys.notice(lang), () =>
+    knex("notice")
+      .select("date", `title_${lang}`, `url_${lang}`)
+      .orderBy("date", "desc")
+      .limit(1),
+  );
   if (!results.length) {
     res
       .status(400)
@@ -1518,8 +1687,10 @@ app.use(
   },
 );
 
-app.listen(config.project.port, () => {
+app.listen(config.project.port, async () => {
   signale.info(new Date());
   signale.success(`API Server running at port ${config.project.port}.`);
-  redisClient.connect();
+  await redisClient.connect().catch((err) => signale.error(err));
+  // 기동 직후 rating 인덱스를 준비해 첫 프로필 조회부터 ZSET을 쓰도록 합니다.
+  rebuildRatingIndexIfNeeded().catch((err) => signale.error(err));
 });
