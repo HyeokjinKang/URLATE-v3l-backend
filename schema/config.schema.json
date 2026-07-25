@@ -169,6 +169,109 @@
         }
       }
     },
+    "cache": {
+      "title": "Cache",
+      "description": "Redis 캐시 설정입니다. 생략하면 캐시가 켜진 상태로 기본 TTL이 적용됩니다.",
+
+      "type": "object",
+      "additionalProperties": false,
+
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Redis 읽기 캐시 사용 여부입니다. false로 두면 모든 조회가 MySQL로 직행합니다.",
+          "examples": [true]
+        },
+        "ttl": {
+          "title": "Cache TTL",
+          "description": "캐시 종류별 유효 시간(초)입니다. 지정하지 않은 항목은 기본값을 사용합니다.",
+
+          "type": "object",
+          "additionalProperties": false,
+
+          "properties": {
+            "tracks": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "곡 목록(/tracks, /track) 캐시 TTL입니다.",
+              "examples": [600]
+            },
+            "trackInfo": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "패턴 정보(/trackInfo) 캐시 TTL입니다.",
+              "examples": [600]
+            },
+            "teamProfile": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "팀 프로필(/teamProfile) 캐시 TTL입니다.",
+              "examples": [600]
+            },
+            "notice": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "공지(/notice) 캐시 TTL입니다.",
+              "examples": [300]
+            },
+            "user": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "본인 정보(/user) 캐시 TTL입니다. 설정 변경 시 즉시 무효화됩니다.",
+              "examples": [300]
+            },
+            "authStatus": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "가입 여부(/auth/status) 캐시 TTL입니다. 가입 시 즉시 무효화됩니다.",
+              "examples": [1800]
+            },
+            "profilePic": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "프로필 사진(/profilePic) 캐시 TTL입니다.",
+              "examples": [300]
+            },
+            "bestRecord": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "개인 최고 기록(/record/:filename/:nickname, /bestRecords) 캐시 TTL입니다. 기록 제출 시 즉시 무효화됩니다.",
+              "examples": [300]
+            },
+            "record": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "개별 기록(/record/:index) 캐시 TTL입니다.",
+              "examples": [60]
+            },
+            "leaderboard": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "곡별 순위표(/records) 캐시 TTL입니다. 해당 곡 기록 제출 시 즉시 무효화됩니다.",
+              "examples": [60]
+            },
+            "ranking": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "전체 랭킹(/ranking) 캐시 TTL입니다.",
+              "examples": [60]
+            },
+            "profile": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "프로필(/profile) 캐시 TTL입니다.",
+              "examples": [30]
+            },
+            "achievements": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "업적 마스터 데이터 캐시 TTL입니다.",
+              "examples": [3600]
+            }
+          }
+        }
+      }
+    },
     "google": {
       "title": "Google API",
       "description": "Google API 설정입니다.",
