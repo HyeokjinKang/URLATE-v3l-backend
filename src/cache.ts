@@ -82,6 +82,8 @@ export const keys = {
   bestRecord: (nickname: string, filename: string) =>
     `bestrec:${seg(nickname)}:${seg(filename)}`,
   bestRecords: (nickname: string) => `bestrecs:${seg(nickname)}`,
+  trackRecords: (nickname: string) => `trackrecs:${seg(nickname)}`,
+  recentPlays: (userid: string) => `recentplays:${seg(userid)}`,
   record: (index: string) => `record:${seg(index)}`,
   ranking: (sort: string) => `ranking:${seg(sort)}`,
   achievement: (index: number) => `achievement:${seg(index)}`,

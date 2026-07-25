@@ -1280,9 +1280,11 @@ app.put("/record", async (req, res) => {
     await invalidate(
       keys.bestRecord(req.body.nickname, req.body.fileName),
       keys.bestRecords(req.body.nickname),
+      keys.trackRecords(req.body.nickname),
       keys.ranking("asc"),
       keys.ranking("desc"),
       updatedUserid ? keys.profile(updatedUserid) : null,
+      updatedUserid ? keys.recentPlays(updatedUserid) : null,
     );
     await invalidateGroup(
       keys.leaderboardGroup(req.body.fileName, req.body.difficultySelection),
@@ -1328,9 +1330,106 @@ app.get("/record/:index", async (req, res) => {
   res.status(200).json({ result: "success", results });
 });
 
+// 한 유저의 곡별 최고 기록을 한 번에 돌려줍니다.
+// 곡 선택 화면이 트랙 수만큼 /record/:filename/:nickname을 호출하던 것을
+// 요청 한 번으로 대체합니다.
+app.get("/trackRecords/:nickname", async (req, res) => {
+  const nickname = req.params.nickname;
+  const records = await getOrSet(
+    "bestRecord",
+    keys.trackRecords(nickname),
+    async () => {
+      const rows = await knex("trackRecords")
+        .select(
+          "filename",
+          "rank",
+          "record",
+          "maxcombo",
+          "medal",
+          "difficulty",
+          "date",
+        )
+        .where("nickname", nickname)
+        .where("isBest", 1)
+        .orderBy("filename", "asc")
+        .orderBy("difficulty", "desc");
+      // 곡 이름을 키로 묶습니다. 각 배열은 /record/:filename/:nickname과 동일하게
+      // 난이도 내림차순입니다.
+      const grouped: Record<string, Record<string, unknown>[]> = {};
+      for (const row of rows) {
+        if (!grouped[row.filename]) grouped[row.filename] = [];
+        grouped[row.filename].push({
+          rank: row.rank,
+          record: row.record,
+          maxcombo: row.maxcombo,
+          medal: row.medal,
+          difficulty: row.difficulty,
+          date: row.date,
+        });
+      }
+      return grouped;
+    },
+  );
+  res.status(200).json({ result: "success", records });
+});
+
+// 프로필의 최근 플레이 목록입니다. 클라이언트가 recentPlay의 id마다
+// /record/:index를 호출하던 것을 요청 한 번으로 대체합니다.
+app.get("/recentPlays/:uid", async (req, res) => {
+  const uid = req.params.uid;
+  const results = await getOrSet(
+    "record",
+    keys.recentPlays(uid),
+    async () => {
+      const users = await knex("users").select("recentPlay").where("userid", uid);
+      if (!users.length) return null;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(users[0].recentPlay);
+      } catch {
+        parsed = [];
+      }
+      const indexes = Array.isArray(parsed)
+        ? parsed.filter((v): v is string => typeof v === "string").slice(0, 10)
+        : [];
+      if (!indexes.length) return [];
+      const rows = await knex("trackRecords")
+        .select(
+          "index",
+          "filename",
+          "rank",
+          "record",
+          "maxcombo",
+          "medal",
+          "difficulty",
+          "date",
+          "judge",
+          "isBest",
+          "accuracy",
+          "rating",
+        )
+        .whereIn("index", indexes);
+      // recentPlay는 최신순이므로, whereIn이 흐트러뜨린 순서를 되돌립니다.
+      const byIndex = new Map(rows.map((row) => [row.index, row]));
+      return indexes
+        .map((index) => byIndex.get(index))
+        .filter((row) => row !== undefined);
+    },
+  );
+  if (results === null) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse("failed", "Failed to Load", "Cannot find user."),
+      );
+    return;
+  }
+  res.status(200).json({ result: "success", results });
+});
+
 app.get("/record/:filename/:nickname", async (req, res) => {
-  // 곡 선택 화면이 트랙 수만큼 병렬 호출하는 가장 뜨거운 경로입니다.
-  // 본인이 기록을 갱신할 때만 바뀌므로 /record 쓰기에서 정확히 무효화합니다.
+  // 곡별 단건 조회입니다. 곡 선택 화면은 /trackRecords/:nickname을 쓰지만,
+  // 기존 클라이언트를 위해 유지합니다.
   const { filename, nickname } = req.params;
   const results = await getOrSet(
     "bestRecord",
