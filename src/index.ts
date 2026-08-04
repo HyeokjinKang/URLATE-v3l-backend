@@ -39,7 +39,7 @@ import {
   setRating,
 } from "./rating-index";
 
-import settingsConfig from "../config/settings.json";
+import { defaultSettings, normalizeSettings } from "./settings";
 
 // 마지막 안전망입니다. Node 15+는 처리되지 않은 프로미스 거부에서 프로세스를
 // 종료하므로, 로그만 남기고 살아남게 해 단발성 오류가 전체 서비스를 끊지 않도록 합니다.
@@ -422,7 +422,7 @@ app.post("/auth/join", async (req, res) => {
       userid: req.session.userid,
       date: new Date(),
       email: req.session.email,
-      settings: JSON.stringify(settingsConfig),
+      settings: JSON.stringify(defaultSettings()),
       skins: '["Default"]',
       tutorial: 3,
       picture: req.session.picture,
@@ -745,9 +745,20 @@ app.put("/settings", async (req, res) => {
       );
     return;
   }
+  // 기본 설정을 스키마 삼아 정규화합니다. 알 수 없는 키와 타입이 어긋난 값은
+  // 버려지므로 저장되는 내용과 크기가 항상 고정됩니다.
+  if (req.body.settings === undefined || req.body.settings === null) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse("failed", "Wrong Request", "Missing settings."),
+      );
+    return;
+  }
+  const settings = normalizeSettings(req.body.settings);
   try {
     await knex("users")
-      .update({ settings: JSON.stringify(req.body.settings) })
+      .update({ settings: JSON.stringify(settings) })
       .where("userid", userid);
     await invalidate(keys.user(userid));
   } catch (e) {
