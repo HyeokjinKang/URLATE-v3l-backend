@@ -14,6 +14,7 @@ import {
 import { observer } from "./achievements";
 import config from "./config";
 import { knex } from "./db";
+import { acquireDailyJobLock } from "./job-lock";
 import { isValidSecret } from "./secret";
 import { isRedisReady, redisClient } from "./redis";
 import { submitRecord } from "./record";
@@ -250,6 +251,8 @@ const updateRankHistory = schedule.scheduleJob("59 23 * * *", async () => {
   // 스케줄 콜백에서 던진 예외는 잡아 줄 호출자가 없어 그대로
   // unhandledRejection이 됩니다. 전체를 감싸 프로세스를 지킵니다.
   try {
+    // 여러 인스턴스가 같은 날 랭크를 중복 기록하지 않도록 실행권을 먼저 잡습니다.
+    if (!(await acquireDailyJobLock("rank-history"))) return;
     signale.info(new Date());
     signale.pending(`Updating rank history...`);
     const users = await knex("users")
@@ -302,7 +305,12 @@ const updateRankHistory = schedule.scheduleJob("59 23 * * *", async () => {
 // 쌓이므로 정리 경로가 없으면 디스크가 차고, 그러면 서버 전체가 멈춥니다.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const cleanupLogs = schedule.scheduleJob("30 4 * * *", async () => {
-  await cleanupReplayLogs();
+  try {
+    if (!(await acquireDailyJobLock("replay-log-cleanup"))) return;
+    await cleanupReplayLogs();
+  } catch (err) {
+    signale.error(err);
+  }
 });
 
 app.get("/auth/status", async (req, res) => {
