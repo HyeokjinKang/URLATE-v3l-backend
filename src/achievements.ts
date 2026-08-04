@@ -5,6 +5,9 @@ import config from "./config";
 import { knex } from "./db";
 import { getOrSet, invalidate, keys } from "./cache";
 
+// 게임 서버 알림 호출의 상한입니다. 실시간 알림이므로 짧게 잡습니다.
+const GAME_SERVER_TIMEOUT_MS = 3000;
+
 interface Data {
   [key: string]: string | number | boolean | undefined;
 }
@@ -209,6 +212,10 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
         secret: config.project.secretKey,
         achievement: achievementsList,
       }),
+      // node-fetch는 기본 타임아웃이 없습니다. 게임 서버가 응답하지 않으면
+      // 이 프로미스가 영원히 열린 채 소켓을 점유하므로 상한을 둡니다.
+      // 업적 알림은 실패해도 되는 부가 기능이라 그대로 흘려보냅니다.
+      signal: AbortSignal.timeout(GAME_SERVER_TIMEOUT_MS),
     }).catch((err) => {
       signale.error(err);
     });
