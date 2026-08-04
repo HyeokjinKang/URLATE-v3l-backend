@@ -15,7 +15,7 @@ import { observer } from "./achievements";
 import config from "./config";
 import { knex } from "./db";
 import { isValidSecret } from "./secret";
-import { redisClient } from "./redis";
+import { isRedisReady, redisClient } from "./redis";
 import { submitRecord } from "./record";
 import { cleanupReplayLogs, writeReplayLog } from "./replay-log";
 import {
@@ -60,6 +60,9 @@ const gidClient = new OAuth2Client(config.google.clientId);
 
 const app = express();
 app.locals.pretty = true;
+
+// Express 버전을 노출하지 않습니다(취약 버전 탐색의 출발점이 됩니다).
+app.disable("x-powered-by");
 
 const redisStore = new RedisStore({
   client: redisClient,
@@ -155,22 +158,6 @@ const csrfGuard = (
   forbiddenOrigin(res);
 };
 
-app.use(sessionMiddleware);
-// 본문 크기 상한을 명시합니다. 기본값(100kb)에 의존하지 않고, 가장 큰 본문인
-// 리플레이 로그를 담을 수 있는 선에서 고정합니다.
-app.use(express.json({ limit: "512kb" }));
-app.use(express.urlencoded({ extended: true, limit: "64kb" }));
-app.use(cookieParser());
-app.use(csrfGuard);
-
-const gidVerify = async (token: string, clientId: string) => {
-  const ticket = await gidClient.verifyIdToken({
-    idToken: token,
-    audience: clientId,
-  });
-  return ticket.getPayload();
-};
-
 // Redis 기반 rate limiter. PM2 클러스터 환경에서도 인스턴스 간 카운터가 공유됩니다.
 const rateLimit =
   (options: { windowSec: number; max: number; prefix: string }) =>
@@ -179,6 +166,12 @@ const rateLimit =
     res: express.Response,
     next: express.NextFunction,
   ) => {
+    // 캐시 계층과 마찬가지로 연결 상태를 먼저 확인합니다. 이 검사가 없으면
+    // Redis가 끊긴 동안 명령이 실패하면서 요청마다 예외 처리 비용을 냅니다.
+    if (!isRedisReady()) {
+      next();
+      return;
+    }
     try {
       const ip = req.ip || req.socket.remoteAddress || "unknown";
       const key = `ratelimit:${options.prefix}:${ip}`;
@@ -205,8 +198,36 @@ const rateLimit =
     next();
   };
 
-// 전역 rate limit: IP당 분당 요청 수를 제한하여 남용/DoS를 완화합니다.
+// JSON API 응답에 대한 최소 보안 헤더입니다. CORS 헤더는 SECURITY.md대로
+// 리버스 프록시가 담당하므로 여기서 설정하지 않습니다(중복 시 브라우저가 차단).
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  // API 응답은 브라우저나 중간 캐시가 보관해서는 안 됩니다.
+  // 본인 데이터(/user 등)가 공유 캐시에 남는 것을 막습니다.
+  res.setHeader("Cache-Control", "no-store");
+  next();
+});
+
+// rate limit을 세션 조회·본문 파싱보다 먼저 통과시킵니다. 이전에는 차단될
+// 요청도 Redis 세션 조회와 본문 파싱 비용을 모두 지불했습니다.
 app.use(rateLimit({ windowSec: 60, max: 600, prefix: "global" }));
+
+app.use(sessionMiddleware);
+// 본문 크기 상한을 명시합니다. 기본값(100kb)에 의존하지 않고, 가장 큰 본문인
+// 리플레이 로그를 담을 수 있는 선에서 고정합니다.
+app.use(express.json({ limit: "512kb" }));
+app.use(express.urlencoded({ extended: true, limit: "64kb" }));
+app.use(cookieParser());
+app.use(csrfGuard);
+
+const gidVerify = async (token: string, clientId: string) => {
+  const ticket = await gidClient.verifyIdToken({
+    idToken: token,
+    audience: clientId,
+  });
+  return ticket.getPayload();
+};
 
 // rating 인덱스(ZSET)를 users 테이블에서 다시 채웁니다.
 // 최초 기동이나 Redis 재시작 이후를 대비한 복구 경로입니다.
@@ -1831,12 +1852,57 @@ app.use(
  * 요청이 세션 저장소 오류로 500이 되거나 캐시 없이 DB를 직접 때립니다.
  * 연결을 먼저 맺고 나서 포트를 엽니다.
  */
+// Redis 연결을 기다리는 상한입니다. node-redis는 연결이 안 되면 백오프를 두고
+// 무한히 재시도하므로, 그대로 await하면 Redis가 죽어 있는 동안 포트가 아예
+// 열리지 않습니다. 상한을 넘기면 기동을 계속하고, 재연결은 배경에서 이어집니다.
+const REDIS_CONNECT_TIMEOUT_MS = 5000;
+
+/**
+ * Redis 연결을 닫습니다.
+ *
+ * 한 번도 연결되지 못한 클라이언트에 quit()을 걸면 프로미스가 정착하지 않아
+ * 종료 절차가 그 자리에서 멈춥니다. 상한을 두고, 그래도 소켓이 남아 있으면
+ * 강제로 끊습니다.
+ */
+const closeRedis = async () => {
+  try {
+    // isReady일 때만 quit()으로 정상 종료를 시도합니다. 재연결 중인 클라이언트는
+    // isOpen이 true여도 명령을 처리할 수 없어 quit()이 정착하지 않습니다.
+    if (redisClient.isReady) {
+      await Promise.race([
+        redisClient.quit(),
+        // 여기서는 unref()를 쓰지 않습니다. 남은 핸들이 모두 unref면 타이머가
+        // 발화하기 전에 프로세스가 그냥 빠져나가 종료 절차가 중간에 끊깁니다.
+        new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+      ]);
+    }
+  } catch (err) {
+    signale.error(err);
+  }
+  try {
+    if (redisClient.isOpen) redisClient.destroy();
+  } catch {
+    // 이미 닫혀 있습니다.
+  }
+};
+
 const start = async () => {
-  await redisClient.connect().catch((err) => {
+  const connecting = redisClient.connect().catch((err) => {
     // Redis가 없어도 캐시/rate limit은 DB 폴백으로 동작하므로 기동은 계속합니다.
     signale.error("Failed to connect to redis on startup.");
     signale.error(err);
   });
+  await Promise.race([
+    connecting,
+    new Promise<void>((resolve) =>
+      setTimeout(resolve, REDIS_CONNECT_TIMEOUT_MS).unref(),
+    ),
+  ]);
+  if (!redisClient.isReady) {
+    signale.warn(
+      "Starting without redis. Cache and rate limit fall back until it recovers.",
+    );
+  }
 
   // 기동 직후 rating 인덱스를 준비해 첫 프로필 조회부터 ZSET을 쓰도록 합니다.
   rebuildRatingIndexIfNeeded().catch((err) => signale.error(err));
@@ -1862,7 +1928,7 @@ const start = async () => {
     // 예약된 작업이 종료 중에 새 쿼리를 시작하지 않도록 멈춥니다.
     await schedule.gracefulShutdown().catch((err) => signale.error(err));
     await knex.destroy().catch((err) => signale.error(err));
-    await redisClient.quit().catch((err) => signale.error(err));
+    await closeRedis();
 
     signale.success("Shutdown complete.");
     process.exit(0);
