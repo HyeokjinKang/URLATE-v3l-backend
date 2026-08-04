@@ -17,7 +17,7 @@ import { knex } from "./db";
 import { acquireDailyJobLock } from "./job-lock";
 import { isValidSecret } from "./secret";
 import { isRedisReady, redisClient } from "./redis";
-import { submitRecord } from "./record";
+import { countFirstPlaces, submitRecord } from "./record";
 import { cleanupReplayLogs, writeReplayLog } from "./replay-log";
 import {
   isValidFileName,
@@ -504,6 +504,9 @@ app.post("/auth/join", async (req, res) => {
       scoreSum: "0",
       accuracy: "0",
       playtime: 0,
+      // users.1stNum은 더 이상 사용하지 않습니다. 1위 곡 수는 조회 시점에
+      // trackRecords에서 계산합니다(countFirstPlaces). 기존 스키마의 NOT NULL
+      // 제약을 고려해 컬럼은 그대로 두고 초기값만 넣습니다.
       "1stNum": 0,
       ap: 0,
       fc: 0,
@@ -575,8 +578,8 @@ app.get("/profile/:uid", async (req, res) => {
   const results = await getOrSet(
     "profile",
     keys.profile(uid),
-    () =>
-      knex("users")
+    async () => {
+      const rows = await knex("users")
         .select(
           "nickname",
           "skins",
@@ -590,14 +593,21 @@ app.get("/profile/:uid", async (req, res) => {
           "scoreSum",
           "accuracy",
           "playtime",
-          "1stNum",
           "ap",
           "fc",
           "clear",
           "ownedAlias",
           "explicit",
         )
-        .where("userid", uid),
+        .where("userid", uid);
+      if (!rows.length) return rows;
+      // 1위 곡 수는 users 컬럼이 아니라 trackRecords에서 그때그때 셉니다.
+      // 카운터를 유지하면 1위를 빼앗긴 쪽의 값을 줄여 줄 수 없어 계속 부풀고,
+      // 한 번 어긋난 값은 스스로 회복되지 않습니다. 응답 필드 이름은 기존
+      // 클라이언트와 동일하게 유지합니다.
+      rows[0]["1stNum"] = await countFirstPlaces(rows[0].nickname);
+      return rows;
+    },
     { cacheEmpty: false },
   );
   if (!results.length) {

@@ -28,6 +28,46 @@ export interface RecordSubmission {
   accuracy: number;
 }
 
+/**
+ * 현재 1위인 곡(난이도별) 수를 셉니다.
+ *
+ * 예전에는 users.1stNum 컬럼에 카운터를 누적했습니다. 그 방식은 1위를 빼앗긴
+ * 사용자의 값을 줄여 줄 방법이 마땅치 않았습니다. 기록 저장 트랜잭션 안에서
+ * 다른 사용자의 행까지 갱신해야 하는데, 제출 경로에 교차 잠금이 생겨 교착
+ * 위험이 커지기 때문입니다. 게다가 한 번 어긋난 값은 스스로 회복되지 않습니다.
+ *
+ * 지금은 조회 시점에 trackRecords에서 직접 셉니다. 저장된 값이 없으니 어긋날
+ * 값도 없고, 표시자가 바뀌어도 양쪽 모두 다음 조회에서 곧바로 맞습니다.
+ *
+ * 동점자는 양쪽 모두 1위로 셉니다. 순위표의 rank 계산(자기보다 높은 기록 수 + 1)과
+ * 같은 기준입니다.
+ *
+ * 비용은 "내 최고 기록 수"에 비례하며, 각 행마다 (filename, difficulty, isBest,
+ * record) 인덱스 조회 한 번입니다(schema/indexes.sql). 호출부인 /profile/:uid는
+ * 캐시되므로 프로필 조회마다 실행되지도 않습니다.
+ */
+export const countFirstPlaces = async (nickname: string): Promise<number> => {
+  const [row] = await knex({ mine: "trackRecords" })
+    .where("mine.nickname", nickname)
+    .where("mine.isBest", 1)
+    .whereNotExists((builder) =>
+      builder
+        .select(knex.raw("1"))
+        .from({ other: "trackRecords" })
+        .where("other.isBest", 1)
+        .whereRaw("other.filename = mine.filename")
+        .whereRaw("other.difficulty = mine.difficulty")
+        .whereRaw("other.record > mine.record"),
+    )
+    .count({ count: "*" });
+  return Number(row.count);
+};
+
+// medal 비트필드입니다. AP는 FC를, FC는 CLEAR를 포함합니다(7 = AP, 3 = FC, 1 = CLEAR).
+const MEDAL_CLEAR = 1;
+const MEDAL_FC = 2;
+const MEDAL_AP = 4;
+
 const uuid = () => {
   const tokens = v4().split("-");
   return tokens[2] + tokens[1] + tokens[0] + tokens[3] + tokens[4];
@@ -133,7 +173,6 @@ export const submitRecord = async (submission: RecordSubmission) => {
         "accuracy",
         "recentPlay",
         "playtime",
-        "1stNum",
         "ap",
         "fc",
         "clear",
@@ -144,31 +183,23 @@ export const submitRecord = async (submission: RecordSubmission) => {
     }
     let ap = 0,
       fc = 0,
-      clear = 0,
-      medal = submission.medal;
+      clear = 0;
     if (isBest) {
-      if (result.length) medal = medal - Number(result[0].medal);
-      if (medal >= 4) {
-        ap = 1;
-        medal -= 4;
-      }
-      if (medal >= 2) {
-        fc = 1;
-        medal -= 2;
-      }
-      if (medal >= 1) {
-        clear = 1;
-      }
-      const allRecords = await trx("trackRecords")
-        .select("nickname")
-        .where("filename", submission.fileName)
-        .where("isBest", 1)
-        .where("difficulty", submission.difficultySelection)
-        .orderBy("record", "desc")
-        .limit(1);
-      if (allRecords.length && allRecords[0].nickname == submission.nickname)
-        isBest = 2;
+      // medal은 비트필드입니다(1=clear, 2=fc, 4=ap). 이전에는 산술 뺄셈으로
+      // 차분을 구했는데, 점수는 올랐지만 콤보가 끊긴 새 최고 기록처럼 뱃지가
+      // 줄어드는 경우에 차분이 음수가 되어 집계가 갱신되지 않았습니다.
+      // 비트별로 비교해 늘어난 뱃지는 +1, 사라진 뱃지는 -1로 반영합니다.
+      const newMedal = submission.medal;
+      const oldMedal = result.length ? Number(result[0].medal) : 0;
+      const diff = (mask: number) =>
+        (newMedal & mask ? 1 : 0) - (oldMedal & mask ? 1 : 0);
+      ap = diff(MEDAL_AP);
+      fc = diff(MEDAL_FC);
+      clear = diff(MEDAL_CLEAR);
     }
+    // 1위 곡 수(1stNum)는 여기서 세지 않습니다. countFirstPlaces가 조회 시점에
+    // trackRecords에서 직접 계산합니다. 그래서 1위를 빼앗긴 사용자의 값을
+    // 이 트랜잭션에서 함께 고쳐 줄 필요가 없고, 교차 잠금도 생기지 않습니다.
     updatedUserid = String(user[0].userid);
     updatedRating = Number(user[0].rating) + ratingDiff;
     // recentPlay가 손상되어 있어도 기록 저장이 실패하지 않도록 방어적으로 파싱합니다.
@@ -198,7 +229,6 @@ export const submitRecord = async (submission: RecordSubmission) => {
         ap: Number(user[0].ap) + ap,
         fc: Number(user[0].fc) + fc,
         clear: Number(user[0].clear) + clear,
-        "1stNum": Number(user[0]["1stNum"]) + (isBest == 2 ? 1 : 0),
       });
   });
 

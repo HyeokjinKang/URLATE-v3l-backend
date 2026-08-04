@@ -132,9 +132,11 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
     newAchievements = filteredIndex;
   }
 
-  // Return early only if there's nothing to process at all
-  // For RANK context, continue even if newAchievements is empty (to update aliases)
-  if (!filteredIndex.length) return;
+  // RANK는 순위에서 밀려났을 때 칭호를 회수해야 하므로, 달성 목록이 비어도
+  // 아래 alias 재조정까지 진행해야 합니다. 이 조기 반환이 context를 가리지
+  // 않았던 탓에 100위 밖으로 밀려난 사용자의 랭크 칭호(8~11)가 회수되지
+  // 않고 영구히 남아 있었습니다.
+  if (context !== "RANK" && !filteredIndex.length) return;
 
   const achievementsList: Array<Achievement> = [];
   for (const i of newAchievements) {
@@ -193,20 +195,37 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
   }
 
   // Update user data
-  await knex("users")
-    .update({
-      achievements: JSON.stringify(Array.from(achievements)),
-      ownedAlias: JSON.stringify(Array.from(ownedAlias)),
-      banner: JSON.stringify(Array.from(banner)),
-      alias: selectedAlias,
-    })
-    .where("userid", userid)
-    .catch((err: Error) => {
-      signale.error(err);
-    });
+  const updated = {
+    achievements: JSON.stringify(Array.from(achievements)),
+    ownedAlias: JSON.stringify(Array.from(ownedAlias)),
+    banner: JSON.stringify(Array.from(banner)),
+    alias: selectedAlias,
+  };
 
-  // 칭호·배너가 바뀌었으므로 프로필 캐시를 비웁니다.
-  await invalidate(keys.profile(userid), keys.user(userid));
+  // 실제로 바뀐 게 없으면 쓰기와 캐시 무효화를 건너뜁니다.
+  // 일일 랭크 잡은 전체 사용자에 대해 이 함수를 호출하므로, 대부분을 차지하는
+  // "변화 없음" 경우에 UPDATE와 캐시 삭제가 사용자 수만큼 발생했습니다.
+  const unchanged =
+    updated.achievements ===
+      JSON.stringify(parseJson<number[]>(userData[0].achievements) ?? []) &&
+    updated.ownedAlias ===
+      JSON.stringify(parseJson<number[]>(userData[0].ownedAlias) ?? []) &&
+    updated.banner ===
+      JSON.stringify(parseJson<string[]>(userData[0].banner) ?? []) &&
+    updated.alias === userData[0].alias;
+  if (unchanged && !achievementsList.length) return;
+
+  if (!unchanged) {
+    await knex("users")
+      .update(updated)
+      .where("userid", userid)
+      .catch((err: Error) => {
+        signale.error(err);
+      });
+
+    // 칭호·배너가 바뀌었으므로 프로필 캐시를 비웁니다.
+    await invalidate(keys.profile(userid), keys.user(userid));
+  }
 
   // Send achievement data to game server only if there are new achievements
   if (achievementsList.length > 0) {
