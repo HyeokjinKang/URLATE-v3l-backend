@@ -19,6 +19,7 @@ import {
 } from "./api-response";
 import { observer } from "./achievements";
 import config from "./config";
+import { isValidSecret } from "./secret";
 import { redisClient } from "./redis";
 import { getOrSet, invalidate, invalidateGroup, keys } from "./cache";
 import {
@@ -649,21 +650,73 @@ app.put("/settings", async (req, res) => {
   res.status(200).json(createSuccessResponse("success"));
 });
 
+// /profile/:element의 요소별 인가 정책입니다.
+// - "user"  : 본인 세션으로 바꿀 수 있는 값(장착 칭호·배너 표시 여부)입니다.
+//             내부 서비스도 secret을 제시하면 대신 수행할 수 있습니다.
+// - "service": 프론트엔드 이미지 업로드 파이프라인만 설정할 수 있는 값입니다.
+//             NSFW 판정 결과(explicit)와 함께 들어와야 하므로 세션만으로는 허용하지 않습니다.
+const PROFILE_ELEMENT_POLICY: Record<string, "user" | "service"> = {
+  alias: "user",
+  banner: "user",
+  background: "service",
+  picture: "service",
+};
+
 app.put("/profile/:element", async (req, res) => {
-  if (!req.session.userid && (!req.body.userid || !req.body.secret)) {
+  const policy = PROFILE_ELEMENT_POLICY[req.params.element];
+  if (!policy) {
     res
       .status(400)
       .json(
         createErrorResponse(
           "failed",
-          "UserID Required",
-          "UserID is required for this task.",
+          "Error occured while updating",
+          "Undefined element name.",
         ),
       );
     return;
   }
+
+  // 신원과 신뢰 수준을 분기 이전에 한 번만 확정합니다.
+  // 예전에는 첫 가드가 secret의 "존재 여부"만 확인하고 값 검증은 background/picture
+  // 분기 안에서만 했기 때문에, alias/banner는 아무 문자열이나 secret으로 보내면
+  // 미인증 상태로 임의 userid를 지정할 수 있었습니다.
+  const hasValidSecret = isValidSecret(req.body.secret);
+  const isService = hasValidSecret && typeof req.body.userid === "string";
+  const userid: string | undefined = req.session.userid
+    ? req.session.userid
+    : isService
+      ? req.body.userid
+      : undefined;
+
+  if (!userid) {
+    res
+      .status(401)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Unauthorized",
+          "Login or a valid project secret is required for this task.",
+        ),
+      );
+    return;
+  }
+
+  // service 전용 요소는 세션 로그인만으로는 변경할 수 없습니다.
+  if (policy === "service" && !hasValidSecret) {
+    res
+      .status(403)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Authorize failed",
+          "Project secret key is not vaild.",
+        ),
+      );
+    return;
+  }
+
   try {
-    const userid = req.session.userid ? req.session.userid : req.body.userid;
     const users = await knex("users")
       .select("explicit", "ownedAlias", "banner", "nickname")
       .where("userid", userid);
@@ -698,18 +751,7 @@ app.put("/profile/:element", async (req, res) => {
         break;
       }
       case "background":
-        if (req.body.secret !== config.project.secretKey) {
-          res
-            .status(400)
-            .json(
-              createErrorResponse(
-                "failed",
-                "Authorize failed",
-                "Project secret key is not vaild.",
-              ),
-            );
-          return;
-        }
+        // secret 검증은 라우트 진입부의 인가 단계에서 이미 끝났습니다.
         // background explicit = 비트 1(값 2)
         explicit = req.body.explicit ? explicit | 2 : explicit & ~2;
         await knex("users")
@@ -717,18 +759,6 @@ app.put("/profile/:element", async (req, res) => {
           .where("userid", userid);
         break;
       case "picture":
-        if (req.body.secret !== config.project.secretKey) {
-          res
-            .status(400)
-            .json(
-              createErrorResponse(
-                "failed",
-                "Authorize failed",
-                "Project secret key is not vaild.",
-              ),
-            );
-          return;
-        }
         // picture explicit = 비트 0(값 1)
         explicit = req.body.explicit ? explicit | 1 : explicit & ~1;
         await knex("users")
@@ -780,17 +810,6 @@ app.put("/profile/:element", async (req, res) => {
           .where("userid", userid);
         break;
       }
-      default:
-        res
-          .status(400)
-          .json(
-            createErrorResponse(
-              "failed",
-              "Error occured while updating",
-              "Undefined element name.",
-            ),
-          );
-        return;
     }
     // 변경된 프로필이 곧바로 보이도록 관련 캐시를 비웁니다.
     await invalidate(
