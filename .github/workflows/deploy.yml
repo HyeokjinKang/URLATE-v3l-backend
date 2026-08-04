@@ -36,10 +36,8 @@ jobs:
       - name: Build project
         run: pnpm run build
 
-      - name: Prepare deployment artifact
-        run: |
-          pnpm --filter=urlate deploy ./deploy
-          cp -r dist ./deploy/
+      - name: Prune dev dependencies
+        run: pnpm prune --prod
 
       - name: Deploy
         run: |
