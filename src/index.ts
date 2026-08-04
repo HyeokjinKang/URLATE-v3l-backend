@@ -23,6 +23,7 @@ import {
   isValidFileName,
   isValidNickname,
   isValidRecordIndex,
+  parseJson,
   toDifficultySelection,
   toFiniteNonNegInt,
   MAX_SCORE,
@@ -169,12 +170,7 @@ const updateRankHistory = schedule.scheduleJob("59 23 * * *", async () => {
     await rebuildRatingIndex(users);
     for (let i = 0; i < users.length; i++) {
       // rankHistory가 손상된 사용자 한 명 때문에 작업 전체가 멈추지 않게 합니다.
-      let previous: unknown;
-      try {
-        previous = JSON.parse(users[i].rankHistory);
-      } catch {
-        previous = [];
-      }
+      const previous = parseJson(users[i].rankHistory);
       const history = [...(Array.isArray(previous) ? previous : []), i + 1];
       await knex("users")
         .update({ rankHistory: JSON.stringify(history.slice(-19)) })
@@ -777,7 +773,7 @@ app.put("/profile/:element", async (req, res) => {
     switch (req.params.element) {
       case "alias": {
         // 소유한 alias(칭호)만 장착할 수 있도록 검증합니다.
-        const ownedAlias: number[] = JSON.parse(users[0].ownedAlias);
+        const ownedAlias = parseJson<number[]>(users[0].ownedAlias) ?? [];
         const selected = Number(req.body.value);
         if (!Number.isInteger(selected) || !ownedAlias.includes(selected)) {
           res
@@ -811,16 +807,11 @@ app.put("/profile/:element", async (req, res) => {
         break;
       case "banner": {
         // 배너는 가시성 토글((-) 마커)만 허용합니다. 소유 목록 자체는 변경할 수 없습니다.
-        let submitted: unknown;
-        try {
-          submitted =
-            typeof req.body.value === "string"
-              ? JSON.parse(req.body.value)
-              : req.body.value;
-        } catch {
-          submitted = null;
-        }
-        const owned: string[] = JSON.parse(users[0].banner);
+        const submitted: unknown =
+          typeof req.body.value === "string"
+            ? parseJson(req.body.value)
+            : req.body.value;
+        const owned = parseJson<string[]>(users[0].banner) ?? [];
         const normalize = (arr: unknown): string[] | null => {
           if (!Array.isArray(arr)) return null;
           const names: string[] = [];
@@ -1235,12 +1226,7 @@ app.get("/recentPlays/:uid", async (req, res) => {
   const results = await getOrSet("record", keys.recentPlays(uid), async () => {
     const users = await knex("users").select("recentPlay").where("userid", uid);
     if (!users.length) return null;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(users[0].recentPlay);
-    } catch {
-      parsed = [];
-    }
+    const parsed = parseJson(users[0].recentPlay);
     const indexes = Array.isArray(parsed)
       ? parsed.filter((v): v is string => typeof v === "string").slice(0, 10)
       : [];
@@ -1477,8 +1463,18 @@ app.put(
     }
     // 위 가드에서 세션이 확인되었으므로 트랜잭션 클로저에서 사용할 userid를 캡처합니다.
     const userid = req.session.userid;
+    // 코드는 DB 조회 조건으로 쓰이므로 문자열만 허용합니다.
+    // 객체/배열이 들어오면 knex가 의도치 않은 조건을 만들 수 있습니다.
+    const code = req.body.code;
+    if (typeof code !== "string" || !code.length || code.length > 64) {
+      res
+        .status(400)
+        .json(
+          createErrorResponse("failed", "Invalid code", "Invalid code sent."),
+        );
+      return;
+    }
     try {
-      const code = req.body.code;
       // 동일 코드에 대한 동시 사용을 직렬화하기 위해 트랜잭션 + 행 잠금으로 처리합니다.
       await knex.transaction(async (trx) => {
         const couponArr = await trx("codes")
@@ -1495,22 +1491,41 @@ app.put(
             "The code sent has already been used.",
           );
         }
-        const usedUser = JSON.parse(coupon.usedUser);
-        if (usedUser) {
-          if (usedUser.indexOf(userid) != -1) {
-            throw new CouponError(
-              "Used code",
-              "The code sent has already been used.",
-            );
-          }
+        // usedUser는 NULL이거나 "null"일 수 있습니다. 예전에는 조회 시에만
+        // 방어하고 아래 push에서는 그대로 호출해, nolimit 쿠폰의 첫 사용에서
+        // TypeError로 500이 나고 해당 쿠폰이 영구히 사용 불가가 되었습니다.
+        const parsedUsedUser = parseJson(coupon.usedUser);
+        const usedUser: string[] = Array.isArray(parsedUsedUser)
+          ? parsedUsedUser
+          : [];
+        if (usedUser.indexOf(userid) != -1) {
+          throw new CouponError(
+            "Used code",
+            "The code sent has already been used.",
+          );
         }
-        const reward = JSON.parse(coupon.reward);
+        const reward = parseJson<{
+          type?: string;
+          content?: string;
+          nolimit?: boolean;
+        }>(coupon.reward);
+        // 보상 정의가 깨져 있으면 캐치되지 않는 예외 대신 명확한 오류로 끝냅니다.
+        if (!reward || typeof reward !== "object") {
+          throw new CouponError("Invalid code", "Invalid code sent.");
+        }
         if (reward.type == "skin") {
           const statusArr = await trx("users")
             .select("skins")
             .where("userid", userid)
             .forUpdate();
-          const skins = JSON.parse(statusArr[0].skins);
+          if (!statusArr.length) {
+            throw new CouponError("Invalid user", "Cannot find user.");
+          }
+          const parsedSkins = parseJson(statusArr[0].skins);
+          const skins: string[] = Array.isArray(parsedSkins) ? parsedSkins : [];
+          if (typeof reward.content !== "string") {
+            throw new CouponError("Invalid code", "Invalid code sent.");
+          }
           if (skins.indexOf(reward.content) != -1) {
             throw new CouponError("Already have", "User already has the skin.");
           } else {

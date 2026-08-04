@@ -4,6 +4,7 @@ import signale from "signale";
 import config from "./config";
 import { knex } from "./db";
 import { getOrSet, invalidate, keys } from "./cache";
+import { parseJson } from "./validate";
 
 // 게임 서버 알림 호출의 상한입니다. 실시간 알림이므로 짧게 잡습니다.
 const GAME_SERVER_TIMEOUT_MS = 3000;
@@ -110,7 +111,10 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
     signale.debug(`Achievement observer got unknown userid ${userid}.`);
     return;
   }
-  const achievements = new Set(JSON.parse(userData[0].achievements));
+  // JSON 컬럼이 손상되어 있어도 업적 처리가 통째로 실패하지 않도록 방어합니다.
+  const achievements = new Set(
+    parseJson<number[]>(userData[0].achievements) ?? [],
+  );
 
   // Get achievement index array from data. It will be [] if there is no achievement.
   const index: number[] = await achievedIndex(context, data);
@@ -154,8 +158,8 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
   }
 
   // Reward
-  const ownedAlias = new Set(JSON.parse(userData[0].ownedAlias));
-  const banner = new Set(JSON.parse(userData[0].banner));
+  const ownedAlias = new Set(parseJson<number[]>(userData[0].ownedAlias) ?? []);
+  const banner = new Set(parseJson<string[]>(userData[0].banner) ?? []);
   let selectedAlias = userData[0].alias;
   if (context === "RANK") {
     // Rank 관련 alias는 8~11번입니다.
@@ -168,18 +172,22 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
     else if (index.includes(idDB.TOP_50)) ownedAlias.add(9);
     else if (index.includes(idDB.TOP_100)) ownedAlias.add(8);
     if (!ownedAlias.has(selectedAlias)) {
-      selectedAlias = Array.from(ownedAlias).pop();
+      // 소유 목록이 비면 pop()이 undefined를 돌려주고, 그대로 UPDATE에 넘기면
+      // knex가 "Undefined binding"으로 실패합니다. 기본 칭호(0)로 되돌립니다.
+      selectedAlias = Array.from(ownedAlias).pop() ?? 0;
     }
   }
   for (const achievement of achievementsList) {
-    const rewards = JSON.parse(achievement.rewards);
+    const rewards = parseJson<[string, string | number][]>(achievement.rewards);
+    if (!Array.isArray(rewards)) continue;
     for (const reward of rewards) {
       if (reward[0] === "alias" && context !== "RANK") {
-        ownedAlias.add(reward[1]);
+        const aliasId = Number(reward[1]);
+        if (Number.isInteger(aliasId)) ownedAlias.add(aliasId);
       } else if (reward[0] === "reward") {
         //not yet
       } else if (reward[0] === "banner") {
-        banner.add(reward[1]);
+        if (typeof reward[1] === "string") banner.add(reward[1]);
       }
     }
   }

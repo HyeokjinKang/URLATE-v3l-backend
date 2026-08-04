@@ -1,6 +1,22 @@
 // 여러 라우트와 기록 저장 계층이 공유하는 입력 검증 헬퍼입니다.
 // 검증 규칙이 한 곳에만 있어야 우회 경로가 생기지 않습니다.
 
+/**
+ * DB에 저장된 JSON 문자열을 안전하게 파싱합니다.
+ *
+ * 이 코드베이스는 배열/객체를 JSON 문자열 컬럼으로 저장하므로, 값이 한 번
+ * 손상되면 맨 JSON.parse가 라우트 전체를 500으로 떨어뜨립니다. 파싱 실패는
+ * null로 돌려 호출부가 기본값으로 진행할 수 있게 합니다.
+ */
+export const parseJson = <T = unknown>(value: unknown): T | null => {
+  if (typeof value !== "string") return null;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+};
+
 export const isValidNickname = (value: unknown): value is string =>
   typeof value === "string" && /^[A-Za-z0-9_-]{5,12}$/.test(value);
 
