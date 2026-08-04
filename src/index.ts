@@ -1824,10 +1824,68 @@ app.use(
   },
 );
 
-app.listen(config.project.port, async () => {
-  signale.info(new Date());
-  signale.success(`API Server running at port ${config.project.port}.`);
-  await redisClient.connect().catch((err) => signale.error(err));
+/**
+ * 서버를 기동합니다.
+ *
+ * Redis 연결을 listen() 콜백 안에서 시작하면, 연결이 맺어지기 전에 들어온
+ * 요청이 세션 저장소 오류로 500이 되거나 캐시 없이 DB를 직접 때립니다.
+ * 연결을 먼저 맺고 나서 포트를 엽니다.
+ */
+const start = async () => {
+  await redisClient.connect().catch((err) => {
+    // Redis가 없어도 캐시/rate limit은 DB 폴백으로 동작하므로 기동은 계속합니다.
+    signale.error("Failed to connect to redis on startup.");
+    signale.error(err);
+  });
+
   // 기동 직후 rating 인덱스를 준비해 첫 프로필 조회부터 ZSET을 쓰도록 합니다.
   rebuildRatingIndexIfNeeded().catch((err) => signale.error(err));
+
+  const server = app.listen(config.project.port, () => {
+    signale.info(new Date());
+    signale.success(`API Server running at port ${config.project.port}.`);
+  });
+
+  /**
+   * 배포·재시작 시 진행 중인 요청을 끝까지 처리하고 자원을 정리합니다.
+   * 정리 없이 종료하면 처리 중이던 요청이 끊기고, 커밋되지 않은 트랜잭션이
+   * DB 쪽 타임아웃까지 잠금을 붙든 채 남습니다.
+   */
+  let shuttingDown = false;
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    signale.pending(`Received ${signal}, shutting down...`);
+
+    // 새 연결을 받지 않고 진행 중인 요청이 끝나기를 기다립니다.
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    // 예약된 작업이 종료 중에 새 쿼리를 시작하지 않도록 멈춥니다.
+    await schedule.gracefulShutdown().catch((err) => signale.error(err));
+    await knex.destroy().catch((err) => signale.error(err));
+    await redisClient.quit().catch((err) => signale.error(err));
+
+    signale.success("Shutdown complete.");
+    process.exit(0);
+  };
+
+  // 기다려도 끝나지 않으면 강제로 종료합니다(pm2의 kill_timeout보다 짧게).
+  const SHUTDOWN_TIMEOUT_MS = 10000;
+  for (const signal of ["SIGTERM", "SIGINT"]) {
+    process.on(signal, () => {
+      setTimeout(() => {
+        signale.error("Shutdown timed out, forcing exit.");
+        process.exit(1);
+      }, SHUTDOWN_TIMEOUT_MS).unref();
+      shutdown(signal).catch((err) => {
+        signale.error(err);
+        process.exit(1);
+      });
+    });
+  }
+};
+
+start().catch((err) => {
+  signale.fatal("Failed to start the server.");
+  signale.fatal(err);
+  process.exit(1);
 });
