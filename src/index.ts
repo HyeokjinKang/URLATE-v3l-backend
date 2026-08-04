@@ -159,6 +159,36 @@ const csrfGuard = (
   forbiddenOrigin(res);
 };
 
+/**
+ * 로그인이 필요한 라우트에 붙입니다.
+ *
+ * 같은 세션 확인 블록이 다섯 곳에 그대로 복제되어 있었습니다. 인가 검사를
+ * 복사해 쓰면 한 곳을 고칠 때 나머지를 빠뜨리기 쉽습니다(실제로 이번 리뷰에서
+ * 발견한 /profile의 인가 누락도 그런 형태였습니다).
+ *
+ * 응답 본문은 기존과 동일하게 유지합니다. 클라이언트가 result/error 필드로
+ * 분기하고 있어 바꾸면 호환이 깨집니다.
+ */
+const requireLogin = (
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) => {
+  if (!req.session.userid) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "UserID Required",
+          "UserID is required for this task.",
+        ),
+      );
+    return;
+  }
+  next();
+};
+
 // Redis 기반 rate limiter. PM2 클러스터 환경에서도 인스턴스 간 카운터가 공유됩니다.
 const rateLimit =
   (options: { windowSec: number; max: number; prefix: string }) =>
@@ -220,6 +250,16 @@ app.use(sessionMiddleware);
 app.use(express.json({ limit: "512kb" }));
 app.use(express.urlencoded({ extended: true, limit: "64kb" }));
 app.use(cookieParser());
+
+// Express 5는 본문 파서가 처리하지 못한 요청(Content-Type 불일치, 본문 없음)의
+// req.body를 undefined로 둡니다. Express 4는 {}였습니다. 라우트들이 req.body.x를
+// 곧바로 읽으므로, 헤더 하나만 어긋나도 TypeError가 나면서 400이어야 할 응답이
+// 500이 됩니다. 빈 객체로 맞춰 이 부류를 한 번에 없앱니다.
+app.use((req, res, next) => {
+  if (req.body === undefined) req.body = {};
+  next();
+});
+
 app.use(csrfGuard);
 
 const gidVerify = async (token: string, clientId: string) => {
@@ -492,20 +532,8 @@ app.post("/auth/join", async (req, res) => {
   }
 });
 
-app.get("/user", async (req, res) => {
-  const userid = req.session.userid;
-  if (!userid) {
-    res
-      .status(400)
-      .json(
-        createErrorResponse(
-          "failed",
-          "UserID Required",
-          "UserID is required for this task.",
-        ),
-      );
-    return;
-  }
+app.get("/user", requireLogin, async (req, res) => {
+  const userid = req.session.userid as string;
 
   // 본인 데이터이므로 키에 userid를 포함해 유저 간 교차 노출을 막습니다.
   // 설정/튜토리얼/쿠폰/프로필 변경 시 즉시 무효화합니다.
@@ -760,20 +788,8 @@ app.get("/trackInfo/:filename", async (req, res) => {
   res.status(200).json({ result: "success", info: results });
 });
 
-app.put("/settings", async (req, res) => {
-  const userid = req.session.userid;
-  if (!userid) {
-    res
-      .status(400)
-      .json(
-        createErrorResponse(
-          "failed",
-          "UserID Required",
-          "UserID is required for this task.",
-        ),
-      );
-    return;
-  }
+app.put("/settings", requireLogin, async (req, res) => {
+  const userid = req.session.userid as string;
   // 기본 설정을 스키마 삼아 정규화합니다. 알 수 없는 키와 타입이 어긋난 값은
   // 버려지므로 저장되는 내용과 크기가 항상 고정됩니다.
   if (req.body.settings === undefined || req.body.settings === null) {
@@ -984,20 +1000,8 @@ app.put("/profile/:element", async (req, res) => {
   res.status(200).json(createSuccessResponse("success"));
 });
 
-app.put("/tutorial", async (req, res) => {
-  const userid = req.session.userid;
-  if (!userid) {
-    res
-      .status(400)
-      .json(
-        createErrorResponse(
-          "failed",
-          "UserID Required",
-          "UserID is required for this task.",
-        ),
-      );
-    return;
-  }
+app.put("/tutorial", requireLogin, async (req, res) => {
+  const userid = req.session.userid as string;
   try {
     await knex("users").update({ tutorial: 1 }).where("userid", userid);
     await invalidate(keys.user(userid), keys.profile(userid));
@@ -1037,25 +1041,9 @@ app.get("/teamProfile/:name", async (req, res) => {
   res.status(200).json({ result: "success", data: results[0].data });
 });
 
-app.get("/trackCount/:name", async (req, res) => {
-  res.end();
-});
-
-app.put("/playRecord", async (req, res) => {
+app.put("/playRecord", requireLogin, async (req, res) => {
   //doesn't scan the entire record yet
   //userid, username, rank, score, maxCombo, perfect, great, good, bad, miss, bullet, accuracy, record
-  if (!req.session.userid) {
-    res
-      .status(400)
-      .json(
-        createErrorResponse(
-          "failed",
-          "UserID Required",
-          "UserID is required for this task.",
-        ),
-      );
-    return;
-  }
 
   const results = await knex("users")
     .select("nickname", "userid")
@@ -1551,19 +1539,8 @@ app.get(
 app.put(
   "/coupon",
   rateLimit({ windowSec: 300, max: 30, prefix: "coupon" }),
+  requireLogin,
   async (req, res) => {
-    if (!req.session.userid) {
-      res
-        .status(400)
-        .json(
-          createErrorResponse(
-            "failed",
-            "UserID Required",
-            "UserID is required for this task.",
-          ),
-        );
-      return;
-    }
     // 비즈니스 검증 실패를 트랜잭션 롤백과 함께 전달하기 위한 에러 타입입니다.
     class CouponError extends Error {
       constructor(
@@ -1573,8 +1550,8 @@ app.put(
         super(description);
       }
     }
-    // 위 가드에서 세션이 확인되었으므로 트랜잭션 클로저에서 사용할 userid를 캡처합니다.
-    const userid = req.session.userid;
+    // requireLogin에서 세션이 확인되었으므로 트랜잭션 클로저에서 쓸 userid를 캡처합니다.
+    const userid = req.session.userid as string;
     // 코드는 DB 조회 조건으로 쓰이므로 문자열만 허용합니다.
     // 객체/배열이 들어오면 knex가 의도치 않은 조건을 만들 수 있습니다.
     const code = req.body.code;
