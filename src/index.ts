@@ -3,15 +3,11 @@ import express from "express";
 import session from "express-session";
 import { RedisStore } from "connect-redis";
 import signale from "signale";
-import fetch from "node-fetch";
-import { v4 } from "uuid";
 import schedule from "node-schedule";
 import fs from "fs-extra";
 import path from "path";
 import { OAuth2Client } from "google-auth-library";
-import Knex from "knex";
 
-import { SimpleResponse } from "./types/config.schema";
 import {
   createSuccessResponse,
   createErrorResponse,
@@ -19,9 +15,20 @@ import {
 } from "./api-response";
 import { observer } from "./achievements";
 import config from "./config";
+import { knex } from "./db";
 import { isValidSecret } from "./secret";
 import { redisClient } from "./redis";
-import { getOrSet, invalidate, invalidateGroup, keys } from "./cache";
+import { submitRecord } from "./record";
+import {
+  isValidFileName,
+  isValidNickname,
+  toFiniteNonNegInt,
+  MAX_SCORE,
+  NOTICE_LANGS,
+  SORT_DIRECTIONS,
+  TRACK_ORDER_COLUMNS,
+} from "./validate";
+import { getOrSet, invalidate, keys } from "./cache";
 import {
   acquireRebuildLock,
   countHigherRating,
@@ -40,17 +47,6 @@ app.locals.pretty = true;
 const redisStore = new RedisStore({
   client: redisClient,
   prefix: "urlate:",
-});
-
-const knex = Knex({
-  client: "mysql2",
-  connection: {
-    host: config.database.host,
-    user: config.database.user,
-    password: config.database.password,
-    database: config.database.db,
-  },
-  pool: { min: 0, max: 7 },
 });
 
 // production 이외의 모드에서만 secure 쿠키를 해제합니다(로컬 HTTP 개발용).
@@ -88,11 +84,6 @@ const gidVerify = async (token: string, clientId: string) => {
   return ticket.getPayload();
 };
 
-const uuid = () => {
-  const tokens = v4().split("-");
-  return tokens[2] + tokens[1] + tokens[0] + tokens[3] + tokens[4];
-};
-
 // Redis 기반 rate limiter. PM2 클러스터 환경에서도 인스턴스 간 카운터가 공유됩니다.
 const rateLimit =
   (options: { windowSec: number; max: number; prefix: string }) =>
@@ -126,35 +117,6 @@ const rateLimit =
     }
     next();
   };
-
-const isValidNickname = (value: unknown): value is string =>
-  typeof value === "string" && /^[A-Za-z0-9_-]{5,12}$/.test(value);
-
-const isValidFileName = (value: unknown): value is string =>
-  typeof value === "string" && /^[a-z0-9]{1,255}$/.test(value);
-
-// 유한한 비음수 정수만 허용합니다(치팅용 이상치 방지).
-const toFiniteNonNegInt = (value: unknown): number | null => {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) return null;
-  return n;
-};
-
-// 정렬 방향 화이트리스트입니다.
-const SORT_DIRECTIONS = new Set(["asc", "desc"]);
-// trackRecords 정렬 가능 컬럼 화이트리스트입니다.
-const TRACK_ORDER_COLUMNS = new Set([
-  "rank",
-  "record",
-  "maxcombo",
-  "accuracy",
-  "rating",
-]);
-// 다국어 공지 언어 화이트리스트입니다.
-const NOTICE_LANGS = new Set(["ko", "en"]);
-
-// 판정 점수 이론적 상한(정합성 검증용). 실제 최고 기록보다 충분히 큰 값입니다.
-const MAX_SCORE = 200_000_000;
 
 // 전역 rate limit: IP당 분당 요청 수를 제한하여 남용/DoS를 완화합니다.
 app.use(rateLimit({ windowSec: 60, max: 600, prefix: "global" }));
@@ -1058,43 +1020,21 @@ app.put("/playRecord", async (req, res) => {
     medal,
   });
   try {
-    const recordRes = await fetch(
-      `http://localhost:${config.project.port}/record`,
-      {
-        method: "PUT",
-        body: JSON.stringify({
-          secret: config.project.secretKey,
-          fileName,
-          nickname,
-          rank,
-          record: score,
-          maxcombo: maxCombo,
-          medal,
-          difficultySelection,
-          difficulty,
-          judge: `${perfect} / ${great} / ${good} / ${bad} / ${miss} / ${bullet}`,
-          accuracy,
-          uid: req.session.userid,
-        }),
-        headers: {
-          "Content-Type": "application/json",
-        },
-      },
-    );
-    const data = (await recordRes.json()) as SimpleResponse;
-    if (data.result == "success") {
-      res.status(200).json(createSuccessResponse("success"));
-    } else {
-      res
-        .status(400)
-        .json(
-          createErrorResponse(
-            "failed",
-            "Failed to Update",
-            "Failed to update score.",
-          ),
-        );
-    }
+    // 검증이 끝난 값만 기록 저장 계층으로 직접 넘깁니다.
+    // (이전에는 localhost로 자기 자신을 HTTP 재호출했습니다.)
+    await submitRecord({
+      fileName,
+      nickname,
+      rank,
+      record: score,
+      maxcombo: maxCombo,
+      medal,
+      difficultySelection,
+      difficulty,
+      judge: `${perfect} / ${great} / ${good} / ${bad} / ${miss} / ${bullet}`,
+      accuracy,
+    });
+    res.status(200).json(createSuccessResponse("success"));
   } catch (e) {
     signale.error(e);
     res
@@ -1107,214 +1047,6 @@ app.put("/playRecord", async (req, res) => {
         ),
       );
   }
-});
-
-app.put("/record", async (req, res) => {
-  if (req.body.secret !== config.project.secretKey) {
-    res
-      .status(400)
-      .json(
-        createErrorResponse(
-          "failed",
-          "Authorize failed",
-          "Project secret key is not vaild.",
-        ),
-      );
-    return;
-  }
-  // 트랜잭션 커밋 이후에 캐시를 비우기 위해 갱신된 값을 밖으로 꺼냅니다.
-  let updatedUserid: string | null = null;
-  let updatedRating = 0;
-  try {
-    // read-modify-write 경쟁 조건 방지를 위해 트랜잭션 + 사용자 행 잠금으로 처리합니다.
-    await knex.transaction(async (trx) => {
-      // 난이도는 클라이언트 값을 신뢰하지 않고 tracks 테이블에서 권위 있는 값을 도출합니다.
-      let difficultyValue = Number(req.body.difficulty);
-      const trackRow = await trx("tracks")
-        .select("difficulty")
-        .where("fileName", req.body.fileName)
-        .first();
-      if (trackRow) {
-        try {
-          const arr = JSON.parse(trackRow.difficulty);
-          const idx = Number(req.body.difficultySelection) - 1;
-          if (
-            Array.isArray(arr) &&
-            idx >= 0 &&
-            idx < arr.length &&
-            Number.isFinite(Number(arr[idx]))
-          ) {
-            difficultyValue = Number(arr[idx]);
-          }
-        } catch {
-          // 파싱 실패 시 상한 검증을 거친 클라이언트 값으로 폴백합니다.
-        }
-      }
-
-      let isBest = 0;
-      const result = await trx("trackRecords")
-        .select("record", "medal", "index")
-        .where("nickname", req.body.nickname)
-        .where("filename", req.body.fileName)
-        .where("isBest", 1)
-        .where("difficulty", req.body.difficultySelection);
-      if (result.length && result[0].record < req.body.record) {
-        isBest = 1;
-        await trx("trackRecords")
-          .update({
-            isBest: 0,
-          })
-          .where("index", result[0].index);
-      }
-      if (!result.length) isBest = 1;
-      const index = uuid();
-      let rating = Number(
-        Math.round(
-          (Number(req.body.record) / 100000000) *
-            Number(req.body.accuracy) *
-            difficultyValue,
-        ),
-      );
-      let ratingDiff = rating;
-      const ratingBest = await trx("trackRecords")
-        .select("rating", "index")
-        .where("nickname", req.body.nickname)
-        .where("filename", req.body.fileName)
-        .where("difficulty", req.body.difficultySelection)
-        .orderBy("rating", "desc")
-        .limit(1);
-      if (ratingBest.length) {
-        if (Number(ratingBest[0].rating) > rating) rating = 0;
-        else {
-          await trx("trackRecords")
-            .update({
-              rating: 0,
-            })
-            .where("index", ratingBest[0].index);
-          ratingDiff = rating - Number(ratingBest[0].rating);
-        }
-      }
-      await trx("trackRecords").insert({
-        filename: req.body.fileName,
-        nickname: req.body.nickname,
-        rank: req.body.rank,
-        record: req.body.record,
-        maxcombo: req.body.maxcombo,
-        medal: req.body.medal,
-        difficulty: req.body.difficultySelection,
-        date: new Date(),
-        isBest,
-        index,
-        judge: req.body.judge,
-        accuracy: req.body.accuracy,
-        rating,
-      });
-      const user = await trx("users")
-        .where("nickname", req.body.nickname)
-        .select(
-          "userid",
-          "rating",
-          "scoreSum",
-          "accuracy",
-          "recentPlay",
-          "playtime",
-          "1stNum",
-          "ap",
-          "fc",
-          "clear",
-        )
-        .forUpdate();
-      if (!user.length) {
-        throw new Error("User not found for record update.");
-      }
-      let ap = 0,
-        fc = 0,
-        clear = 0,
-        medal = Number(req.body.medal);
-      if (isBest) {
-        if (result.length) medal = medal - result[0].medal;
-        if (medal >= 4) {
-          ap = 1;
-          medal -= 4;
-        }
-        if (medal >= 2) {
-          fc = 1;
-          medal -= 2;
-        }
-        if (medal >= 1) {
-          clear = 1;
-        }
-        const allRecords = await trx("trackRecords")
-          .select("nickname")
-          .where("filename", req.body.fileName)
-          .where("isBest", 1)
-          .where("difficulty", req.body.difficultySelection)
-          .orderBy("record", "desc")
-          .limit(1);
-        if (allRecords.length && allRecords[0].nickname == req.body.nickname)
-          isBest = 2;
-      }
-      updatedUserid = String(user[0].userid);
-      updatedRating = Number(user[0].rating) + ratingDiff;
-      await trx("users")
-        .where("nickname", req.body.nickname)
-        .update({
-          rating: updatedRating,
-          scoreSum: Number(user[0].scoreSum) + Number(req.body.record),
-          accuracy: (
-            Math.round(
-              ((Number(user[0].accuracy) * Number(user[0].playtime) +
-                Number(req.body.accuracy)) *
-                100) /
-                (Number(user[0].playtime) + 1),
-            ) / 100
-          ).toFixed(2),
-          recentPlay: JSON.stringify(
-            [index, ...JSON.parse(user[0].recentPlay)].slice(0, 10),
-          ),
-          playtime: Number(user[0].playtime) + 1,
-          ap: Number(user[0].ap) + ap,
-          fc: Number(user[0].fc) + fc,
-          clear: Number(user[0].clear) + clear,
-          "1stNum": Number(user[0]["1stNum"]) + (isBest == 2 ? 1 : 0),
-        });
-    });
-  } catch (e) {
-    signale.error(e);
-    res
-      .status(500)
-      .json(
-        createErrorResponse(
-          "failed",
-          "Error occured while updating",
-          "Internal server error.",
-        ),
-      );
-    return;
-  }
-
-  // 커밋이 끝난 뒤에만 캐시를 정리합니다. 방금 남긴 기록이 즉시 보여야 하므로
-  // TTL 만료를 기다리지 않고 관련 키를 직접 비웁니다.
-  try {
-    await invalidate(
-      keys.bestRecord(req.body.nickname, req.body.fileName),
-      keys.bestRecords(req.body.nickname),
-      keys.trackRecords(req.body.nickname),
-      keys.ranking("asc"),
-      keys.ranking("desc"),
-      updatedUserid ? keys.profile(updatedUserid) : null,
-      updatedUserid ? keys.recentPlays(updatedUserid) : null,
-    );
-    await invalidateGroup(
-      keys.leaderboardGroup(req.body.fileName, req.body.difficultySelection),
-    );
-    if (updatedUserid) await setRating(updatedUserid, updatedRating);
-  } catch (e) {
-    // 캐시 정리 실패가 기록 저장 성공을 뒤집지는 않습니다.
-    signale.error(e);
-  }
-
-  res.status(200).json(createSuccessResponse("success"));
 });
 
 app.get("/record/:index", async (req, res) => {

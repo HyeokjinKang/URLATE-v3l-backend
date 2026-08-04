@@ -2,18 +2,8 @@ import fetch from "node-fetch";
 import signale from "signale";
 
 import config from "./config";
+import { knex } from "./db";
 import { getOrSet, invalidate, keys } from "./cache";
-
-const knex = require("knex")({
-  client: "mysql2",
-  connection: {
-    host: config.database.host,
-    user: config.database.user,
-    password: config.database.password,
-    database: config.database.db,
-  },
-  pool: { min: 0, max: 7 },
-});
 
 interface Data {
   [key: string]: string | number | boolean | undefined;
