@@ -115,9 +115,25 @@ interface GetOrSetOptions {
   cacheEmpty?: boolean;
 }
 
+// 채움 담당을 정하는 락의 네임스페이스입니다.
+const LOCK_PREFIX = "cachelock:v1:";
+// 채움이 이보다 오래 걸리면 락은 그냥 만료되고 다음 요청이 다시 시도합니다.
+const FILL_LOCK_TTL_SEC = 10;
+// 다른 요청이 채워 주기를 기다리는 최대 시간과 확인 간격입니다.
+// 캐시 때문에 응답이 느려져서는 안 되므로 짧게 잡고, 넘기면 그냥 DB로 갑니다.
+const FILL_WAIT_TOTAL_MS = 300;
+const FILL_WAIT_INTERVAL_MS = 30;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
  * 캐시-어사이드 조회입니다. Redis가 죽어 있거나 오류가 나면 조용히 DB로 폴백합니다.
  * 캐시 때문에 요청이 실패하는 일은 없어야 합니다.
+ *
+ * 뜨거운 키(tracks 등)가 만료되는 순간 동시 요청이 전부 DB로 몰리는 것을
+ * 막기 위해, 미스가 나면 락을 잡은 요청 하나만 DB를 조회하고 나머지는 잠깐
+ * 기다렸다가 채워진 값을 씁니다. 기다림에는 상한이 있고, 넘기면 각자 DB로
+ * 갑니다. 캐시 계층이 요청을 붙잡아 두는 일은 없어야 하기 때문입니다.
  */
 export const getOrSet = async <T>(
   kind: CacheKind,
@@ -128,35 +144,75 @@ export const getOrSet = async <T>(
   if (!isUsable()) return fetcher();
 
   const fullKey = PREFIX + key;
-  try {
+  const read = async (): Promise<{ hit: boolean; value?: T }> => {
     const cached = await redisClient.get(fullKey);
-    if (cached !== null) return JSON.parse(cached) as T;
-  } catch (err) {
-    signale.error(err);
-    return fetcher();
-  }
+    if (cached === null) return { hit: false };
+    return { hit: true, value: JSON.parse(cached) as T };
+  };
 
-  const value = await fetcher();
-  // null/undefined는 캐싱하지 않습니다. "조회 실패"가 TTL 동안 굳는 것을 방지합니다.
-  if (value === null || value === undefined) return value;
-  if (options.cacheEmpty === false && Array.isArray(value) && !value.length) {
-    return value;
-  }
-
-  const ttl = ttlOf(kind);
+  // 락을 잡았다면 어떤 경로로 빠져나가든(정상 반환, 조회 실패, 비캐싱 반환)
+  // finally에서 반드시 놓습니다.
+  let holdsLock = false;
   try {
-    await redisClient.set(fullKey, JSON.stringify(value), { EX: ttl });
-    if (options.group) {
-      const groupKey = GROUP_PREFIX + options.group;
-      await redisClient.sAdd(groupKey, fullKey);
-      // 그룹 SET이 영원히 남지 않도록 멤버보다 넉넉한 TTL을 걸어둡니다.
-      await redisClient.expire(groupKey, ttl * 2);
+    try {
+      const first = await read();
+      if (first.hit) return first.value as T;
+
+      // 미스입니다. 채움 담당을 한 명만 정합니다.
+      holdsLock =
+        (await redisClient.set(LOCK_PREFIX + key, "1", {
+          NX: true,
+          EX: FILL_LOCK_TTL_SEC,
+        })) === "OK";
+
+      if (!holdsLock) {
+        // 다른 요청이 채우는 중입니다. 잠깐만 기다려 봅니다.
+        const deadline = Date.now() + FILL_WAIT_TOTAL_MS;
+        while (Date.now() < deadline) {
+          await sleep(FILL_WAIT_INTERVAL_MS);
+          const retry = await read();
+          if (retry.hit) return retry.value as T;
+        }
+        // 시간 안에 채워지지 않았습니다. 기다리느니 직접 조회합니다.
+      }
+    } catch (err) {
+      // 여기까지의 오류는 모두 Redis 쪽입니다. 캐시 때문에 요청이 실패하는
+      // 일은 없어야 하므로 조용히 DB로 폴백합니다.
+      // (fetcher 자체의 오류는 아래에서 그대로 전파시켜야 하므로 이 catch가
+      //  fetcher 호출을 감싸지 않도록 범위를 좁혀 둡니다.)
+      signale.error(err);
+      return await fetcher();
     }
-  } catch (err) {
-    // 저장 실패는 응답에 영향을 주지 않습니다.
-    signale.error(err);
+
+    const value = await fetcher();
+    // null/undefined는 캐싱하지 않습니다. "조회 실패"가 TTL 동안 굳는 것을 방지합니다.
+    if (value === null || value === undefined) return value;
+    if (options.cacheEmpty === false && Array.isArray(value) && !value.length) {
+      return value;
+    }
+
+    const ttl = ttlOf(kind);
+    try {
+      await redisClient.set(fullKey, JSON.stringify(value), { EX: ttl });
+      if (options.group) {
+        const groupKey = GROUP_PREFIX + options.group;
+        await redisClient.sAdd(groupKey, fullKey);
+        // 그룹 SET이 영원히 남지 않도록 멤버보다 넉넉한 TTL을 걸어둡니다.
+        await redisClient.expire(groupKey, ttl * 2);
+      }
+    } catch (err) {
+      // 저장 실패는 응답에 영향을 주지 않습니다.
+      signale.error(err);
+    }
+    return value;
+  } finally {
+    if (holdsLock) {
+      // 값을 채웠으니 기다리던 요청들이 바로 읽어 가도록 락을 놓습니다.
+      await redisClient.del(LOCK_PREFIX + key).catch((err) => {
+        signale.error(err);
+      });
+    }
   }
-  return value;
 };
 
 /**

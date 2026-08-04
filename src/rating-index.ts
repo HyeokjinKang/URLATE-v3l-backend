@@ -69,8 +69,16 @@ export const countHigherRating = async (
 ): Promise<number | null> => {
   if (!isRedisReady() || !Number.isFinite(rating)) return null;
   try {
-    if ((await redisClient.zCard(RATING_KEY)) === 0) return null;
-    return await redisClient.zCount(RATING_KEY, `(${rating}`, "+inf");
+    // ZCOUNT만으로는 "인덱스가 비어 있음"과 "더 높은 사람이 없음(1위)"을
+    // 구분할 수 없으므로 ZCARD가 함께 필요합니다. 두 명령을 같은 틱에 내보내
+    // node-redis가 한 번의 왕복으로 묶도록 합니다(기존에는 순차 await라
+    // 프로필 조회마다 왕복이 2회였습니다).
+    const [size, higher] = await Promise.all([
+      redisClient.zCard(RATING_KEY),
+      redisClient.zCount(RATING_KEY, `(${rating}`, "+inf"),
+    ]);
+    if (size === 0) return null;
+    return higher;
   } catch (err) {
     signale.error(err);
     return null;
