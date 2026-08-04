@@ -88,10 +88,80 @@ const sessionMiddleware = session({
   },
 });
 
+/**
+ * CSRF 방어입니다.
+ *
+ * 지금까지 방어는 세션 쿠키의 SameSite=lax 하나에만 의존했습니다. lax는 상위
+ * 도메인을 공유하는 사이트(example.com <-> api.example.com) 사이에서는 쿠키를
+ * 그대로 실어 보내므로, 서브도메인 중 하나라도 장악되면 모든 상태 변경 요청이
+ * 통과합니다. 그래서 Origin(없으면 Referer)을 신뢰 목록과 대조하는 계층을
+ * 하나 더 둡니다.
+ *
+ * Origin과 Referer가 모두 없는 요청은 통과시킵니다. 브라우저는 상태 변경
+ * 요청에 Origin을 반드시 붙이므로, 이 경우는 서버 간 호출(프론트엔드 ->
+ * 백엔드)이며 그 경로는 project secret으로 따로 인증합니다.
+ */
+const CSRF_SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+const ALLOWED_ORIGINS = new Set(
+  [config.project.url, config.project.api].filter(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  ),
+);
+
+const toOrigin = (value?: string): string | null => {
+  if (!value) return null;
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+};
+
+// 요청이 밝힌 출처입니다. 브라우저가 아니면 null입니다.
+const requestOrigin = (req: express.Request): string | null =>
+  toOrigin(req.get("origin")) ?? toOrigin(req.get("referer"));
+
+const isAllowedOrigin = (origin: string | null): boolean =>
+  origin !== null && ALLOWED_ORIGINS.has(origin);
+
+const forbiddenOrigin = (res: express.Response) => {
+  res
+    .status(403)
+    .json(
+      createErrorResponse(
+        "failed",
+        "Forbidden Origin",
+        "Request origin is not allowed.",
+      ),
+    );
+};
+
+const csrfGuard = (
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) => {
+  if (CSRF_SAFE_METHODS.has(req.method)) {
+    next();
+    return;
+  }
+  const origin = requestOrigin(req);
+  if (origin === null || ALLOWED_ORIGINS.has(origin)) {
+    next();
+    return;
+  }
+  signale.warn(`Blocked cross-origin ${req.method} ${req.path} from ${origin}.`);
+  forbiddenOrigin(res);
+};
+
 app.use(sessionMiddleware);
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// 본문 크기 상한을 명시합니다. 기본값(100kb)에 의존하지 않고, 가장 큰 본문인
+// 리플레이 로그를 담을 수 있는 선에서 고정합니다.
+app.use(express.json({ limit: "512kb" }));
+app.use(express.urlencoded({ extended: true, limit: "64kb" }));
 app.use(cookieParser());
+app.use(csrfGuard);
 
 const gidVerify = async (token: string, clientId: string) => {
   const ticket = await gidClient.verifyIdToken({
