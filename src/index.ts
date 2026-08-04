@@ -1695,12 +1695,50 @@ app.get("/ranking/:sort/:limit", async (req, res) => {
   res.status(200).json({ result: "success", results });
 });
 
+/**
+ * 세션을 저장소에서 지우고 쿠키도 회수합니다.
+ *
+ * 이전에는 세션 필드만 delete하고 저장했기 때문에, 인증 상태는 풀리더라도
+ * 세션 레코드가 만료(14일)까지 Redis에 그대로 남고 브라우저의 쿠키도 남았습니다.
+ */
+const destroySession = (
+  req: express.Request,
+  res: express.Response,
+  done: () => void,
+) => {
+  req.session.destroy((err) => {
+    if (err) signale.error(err);
+    res.clearCookie("urlate", {
+      domain: config.session.domain,
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: "lax",
+      path: "/",
+    });
+    done();
+  });
+};
+
+// 권장 경로입니다. 상태를 바꾸므로 POST이며 csrfGuard의 보호를 받습니다.
+app.post("/auth/logout", (req, res) => {
+  destroySession(req, res, () => {
+    res.status(200).json(createSuccessResponse("success"));
+  });
+});
+
+/**
+ * 최상위 내비게이션으로 로그아웃하고 프론트엔드로 되돌아가는 경로입니다.
+ * GET이라 csrfGuard가 적용되지 않으므로, 여기서는 출처를 직접 확인합니다.
+ * 이 검사가 없으면 <img src="...auth/logout">만으로 남의 세션을 끊을 수
+ * 있습니다(로그아웃 CSRF). 정상적인 이동은 항상 프론트엔드에서 시작되므로
+ * Origin이나 Referer가 신뢰 목록과 일치합니다.
+ */
 app.get("/auth/logout", (req, res) => {
-  delete req.session.userid;
-  delete req.session.tempName;
-  delete req.session.email;
-  delete req.session.picture;
-  req.session.save(() => {
+  if (!isAllowedOrigin(requestOrigin(req))) {
+    forbiddenOrigin(res);
+    return;
+  }
+  destroySession(req, res, () => {
     if (req.query.redirect == "true") {
       let adder = "";
       if (req.query.shutdowned == "true") adder = "/?shutdowned=true";
