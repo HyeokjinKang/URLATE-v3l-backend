@@ -1818,14 +1818,27 @@ app.use(
   ) => {
     signale.error(err);
     if (res.headersSent) return;
+    // body-parser 등이 붙이는 클라이언트 오류 상태(잘못된 JSON 본문 -> 400,
+    // 본문 크기 초과 -> 413)를 존중합니다. 전부 500으로 뭉개면 호출자가 자기
+    // 요청이 잘못된 것인지 서버가 고장난 것인지 구분할 수 없습니다.
+    const status = (err as { status?: number; statusCode?: number } | null)?.status
+      ?? (err as { statusCode?: number } | null)?.statusCode;
+    const isClientError =
+      typeof status === "number" && status >= 400 && status < 500;
     res
-      .status(500)
+      .status(isClientError ? status : 500)
       .json(
-        createErrorResponse(
-          "failed",
-          "Internal Server Error",
-          "An unexpected error occurred.",
-        ),
+        isClientError
+          ? createErrorResponse(
+              "failed",
+              "Bad Request",
+              "Request could not be processed.",
+            )
+          : createErrorResponse(
+              "failed",
+              "Internal Server Error",
+              "An unexpected error occurred.",
+            ),
       );
   },
 );
