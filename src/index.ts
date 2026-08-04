@@ -39,6 +39,21 @@ import {
 
 import settingsConfig from "../config/settings.json";
 
+// 마지막 안전망입니다. Node 15+는 처리되지 않은 프로미스 거부에서 프로세스를
+// 종료하므로, 로그만 남기고 살아남게 해 단발성 오류가 전체 서비스를 끊지 않도록 합니다.
+process.on("unhandledRejection", (reason) => {
+  signale.error("Unhandled promise rejection:");
+  signale.error(reason);
+});
+
+// uncaughtException 이후의 프로세스 상태는 신뢰할 수 없으므로 기록 후 종료하고
+// 프로세스 매니저(pm2)의 재시작에 맡깁니다.
+process.on("uncaughtException", (err) => {
+  signale.fatal("Uncaught exception, shutting down:");
+  signale.fatal(err);
+  process.exit(1);
+});
+
 const gidClient = new OAuth2Client(config.google.clientId);
 
 const app = express();
@@ -139,44 +154,63 @@ const rebuildRatingIndexIfNeeded = async () => {
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const updateRankHistory = schedule.scheduleJob("59 23 * * *", async () => {
-  signale.info(new Date());
-  signale.pending(`Updating rank history...`);
-  const users = await knex("users")
-    .select("userid", "rankHistory", "rating")
-    .orderBy("rating", "desc");
-  // 하루 한 번 rating 인덱스를 통째로 다시 만들어 증분 갱신에서 생길 수 있는
-  // 누락을 바로잡습니다.
-  await rebuildRatingIndex(users);
-  for (let i = 0; i < users.length; i++) {
-    const history = [...JSON.parse(users[i].rankHistory), i + 1];
-    await knex("users")
-      .update({ rankHistory: JSON.stringify(history.slice(-19)) })
-      .where("userid", users[i].userid);
-    let rank100 = false,
-      rank50 = false,
-      rank10 = false,
-      rank1 = false;
-    if (i < 100) {
-      rank100 = true;
-      if (i < 50) {
-        rank50 = true;
-        if (i < 10) {
-          rank10 = true;
-          if (i < 1) {
-            rank1 = true;
+  // 스케줄 콜백에서 던진 예외는 잡아 줄 호출자가 없어 그대로
+  // unhandledRejection이 됩니다. 전체를 감싸 프로세스를 지킵니다.
+  try {
+    signale.info(new Date());
+    signale.pending(`Updating rank history...`);
+    const users = await knex("users")
+      .select("userid", "rankHistory", "rating")
+      .orderBy("rating", "desc");
+    // 하루 한 번 rating 인덱스를 통째로 다시 만들어 증분 갱신에서 생길 수 있는
+    // 누락을 바로잡습니다.
+    await rebuildRatingIndex(users);
+    for (let i = 0; i < users.length; i++) {
+      // rankHistory가 손상된 사용자 한 명 때문에 작업 전체가 멈추지 않게 합니다.
+      let previous: unknown;
+      try {
+        previous = JSON.parse(users[i].rankHistory);
+      } catch {
+        previous = [];
+      }
+      const history = [
+        ...(Array.isArray(previous) ? previous : []),
+        i + 1,
+      ];
+      await knex("users")
+        .update({ rankHistory: JSON.stringify(history.slice(-19)) })
+        .where("userid", users[i].userid);
+      let rank100 = false,
+        rank50 = false,
+        rank10 = false,
+        rank1 = false;
+      if (i < 100) {
+        rank100 = true;
+        if (i < 50) {
+          rank50 = true;
+          if (i < 10) {
+            rank10 = true;
+            if (i < 1) {
+              rank1 = true;
+            }
           }
         }
       }
+      // 순차 처리로 동시 실행 수를 1로 묶습니다. 유저 수만큼의 쿼리가
+      // 한꺼번에 풀(max 7)로 몰리는 것을 막습니다.
+      await observer(`${users[i].userid}`, "RANK", {
+        rank100,
+        rank50,
+        rank10,
+        rank1,
+      });
     }
-    observer(`${users[i].userid}`, "RANK", {
-      rank100,
-      rank50,
-      rank10,
-      rank1,
-    });
+    signale.info(new Date());
+    signale.success(`Rank history updated.`);
+  } catch (err) {
+    signale.error(`Failed to update rank history.`);
+    signale.error(err);
   }
-  signale.info(new Date());
-  signale.success(`Rank history updated.`);
 });
 
 app.get("/auth/status", async (req, res) => {

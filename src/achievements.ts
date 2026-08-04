@@ -90,11 +90,15 @@ const achievedIndex = async (context: string, data?: Data) => {
   return index;
 };
 
-export const observer = async (
-  userid: string,
-  context: string,
-  data?: Data,
-) => {
+/**
+ * 업적 처리 본체입니다.
+ *
+ * 이 함수는 요청 처리 흐름 밖에서 fire-and-forget으로 호출되므로, 여기서 던진
+ * 예외는 라우트의 try/catch나 Express 에러 핸들러에 잡히지 않고 그대로
+ * unhandledRejection이 됩니다(Node 15+ 기본 동작은 프로세스 종료). 그래서
+ * 아래 observer가 전체를 감싸 반드시 자체적으로 흡수합니다.
+ */
+const runObserver = async (userid: string, context: string, data?: Data) => {
   // 필요한 컬럼만 읽습니다(기존에는 users 행 전체를 SELECT 했습니다).
   const userData = await knex("users")
     .select("achievements", "ownedAlias", "banner", "alias")
@@ -208,5 +212,23 @@ export const observer = async (
     }).catch((err) => {
       signale.error(err);
     });
+  }
+};
+
+/**
+ * 업적 처리를 호출합니다. 실패해도 호출자의 흐름(기록 저장, 튜토리얼 완료 등)을
+ * 되돌리지 않고 로그만 남깁니다. 어떤 경우에도 거부된 프로미스를 밖으로
+ * 내보내지 않으므로 호출부에서 await나 .catch를 붙이지 않아도 안전합니다.
+ */
+export const observer = async (
+  userid: string,
+  context: string,
+  data?: Data,
+): Promise<void> => {
+  try {
+    await runObserver(userid, context, data);
+  } catch (err) {
+    signale.error(`Achievement observer failed for ${userid} (${context}).`);
+    signale.error(err);
   }
 };
