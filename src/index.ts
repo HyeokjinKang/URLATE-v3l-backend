@@ -4,8 +4,6 @@ import session from "express-session";
 import { RedisStore } from "connect-redis";
 import signale from "signale";
 import schedule from "node-schedule";
-import fs from "fs-extra";
-import path from "path";
 import { OAuth2Client } from "google-auth-library";
 
 import {
@@ -19,6 +17,7 @@ import { knex } from "./db";
 import { isValidSecret } from "./secret";
 import { redisClient } from "./redis";
 import { submitRecord } from "./record";
+import { cleanupReplayLogs, writeReplayLog } from "./replay-log";
 import {
   isValidFileName,
   isValidNickname,
@@ -206,6 +205,13 @@ const updateRankHistory = schedule.scheduleJob("59 23 * * *", async () => {
     signale.error(`Failed to update rank history.`);
     signale.error(err);
   }
+});
+
+// 보관 기간이 지난 리플레이 로그를 매일 정리합니다. 플레이 1회당 파일 하나가
+// 쌓이므로 정리 경로가 없으면 디스크가 차고, 그러면 서버 전체가 멈춥니다.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const cleanupLogs = schedule.scheduleJob("30 4 * * *", async () => {
+  await cleanupReplayLogs();
 });
 
 app.get("/auth/status", async (req, res) => {
@@ -1074,16 +1080,12 @@ app.put("/playRecord", async (req, res) => {
   }
 
   // 로그 경로는 검증된 세그먼트만으로 구성하고 최종 경로가 로그 루트 하위인지 확인합니다.
-  const logsRoot = path.resolve(__dirname, "../logs");
-  const logDir = path.resolve(logsRoot, nickname, fileName);
-  if (logDir !== logsRoot && !logDir.startsWith(logsRoot + path.sep)) {
+  if (!writeReplayLog(nickname, fileName, req.body.record)) {
     res
       .status(400)
       .json(createErrorResponse("failed", "Wrong Format", "Invalid log path."));
     return;
   }
-  const logFile = path.join(logDir, `${Date.now()}.json`);
-  fs.outputJson(logFile, req.body.record).catch((err) => signale.error(err));
 
   observer(`${req.session.userid}`, "JUDGE", {
     perfect,
