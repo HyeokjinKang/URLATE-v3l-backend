@@ -34,3 +34,16 @@ export const TRACK_ORDER_COLUMNS = new Set([
 
 // 다국어 공지 언어 화이트리스트입니다.
 export const NOTICE_LANGS = new Set(["ko", "en"]);
+
+// trackRecords.index는 uuid v4의 조각을 재배열한 32자리 16진 문자열입니다.
+export const isValidRecordIndex = (value: unknown): value is string =>
+  typeof value === "string" && /^[0-9a-f]{32}$/.test(value);
+
+// 곡당 난이도 수의 상한입니다. difficultySelection은 1부터 시작합니다.
+export const MAX_DIFFICULTY_SELECTION = 20;
+
+export const toDifficultySelection = (value: unknown): number | null => {
+  const n = toFiniteNonNegInt(value);
+  if (n === null || n < 1 || n > MAX_DIFFICULTY_SELECTION) return null;
+  return n;
+};

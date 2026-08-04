@@ -22,6 +22,8 @@ import { submitRecord } from "./record";
 import {
   isValidFileName,
   isValidNickname,
+  isValidRecordIndex,
+  toDifficultySelection,
   toFiniteNonNegInt,
   MAX_SCORE,
   NOTICE_LANGS,
@@ -173,10 +175,7 @@ const updateRankHistory = schedule.scheduleJob("59 23 * * *", async () => {
       } catch {
         previous = [];
       }
-      const history = [
-        ...(Array.isArray(previous) ? previous : []),
-        i + 1,
-      ];
+      const history = [...(Array.isArray(previous) ? previous : []), i + 1];
       await knex("users")
         .update({ rankHistory: JSON.stringify(history.slice(-19)) })
         .where("userid", users[i].userid);
@@ -518,22 +517,63 @@ app.get("/profilePic/:username", async (req, res) => {
   res.status(200).json({ result: "success", picture: results[0].picture });
 });
 
-app.get("/tracks", async (req, res) => {
-  // 모든 페이지 진입마다 호출되지만 곡이 추가될 때만 바뀌는 데이터입니다.
-  const results = await getOrSet(
+const TRACK_COLUMNS = [
+  "name",
+  "fileName",
+  "producer",
+  "bpm",
+  "difficulty",
+  "originalName",
+];
+
+const getAllTracks = () =>
+  getOrSet(
     "tracks",
     keys.tracksAll(),
-    () =>
-      knex("tracks").select(
-        "name",
-        "fileName",
-        "producer",
-        "bpm",
-        "difficulty",
-        "originalName",
-      ),
+    () => knex("tracks").select(TRACK_COLUMNS),
+    {
+      cacheEmpty: false,
+    },
+  );
+
+/**
+ * 자유 입력 파라미터로 만들어지는 캐시 키의 개수를 실제 데이터 규모로 묶습니다.
+ *
+ * 캐시 키는 요청 파라미터를 그대로 사용하고 빈 결과도 저장하기 때문에, 검증이
+ * 없으면 존재하지 않는 닉네임·곡 이름을 반복 조회하는 것만으로 Redis에 쓰레기
+ * 키를 무제한 적재할 수 있었습니다. 형식 검증만으로는 부족합니다(닉네임 형식이
+ * 허용하는 조합 자체가 사실상 무한하므로). 그래서 캐시 계층에 도달하기 전에
+ * 대상이 실제로 존재하는지 확인합니다.
+ *
+ * 두 검사 모두 기존 캐시 키(tracks:all, pic:*)를 재사용하므로 정상 요청에서는
+ * 추가 DB 조회가 발생하지 않고, 존재하지 않는 값은 cacheEmpty: false 때문에
+ * 캐시에 남지 않습니다.
+ */
+const trackExists = async (fileName: string): Promise<boolean> => {
+  const tracks = await getAllTracks();
+  return tracks.some((track) => track.fileName === fileName);
+};
+
+const nicknameExists = async (nickname: string): Promise<boolean> => {
+  const rows = await getOrSet(
+    "profilePic",
+    keys.profilePic(nickname),
+    () => knex("users").select("picture").where("nickname", nickname),
     { cacheEmpty: false },
   );
+  return rows.length > 0;
+};
+
+// 조회 대상이 없을 때 공통으로 쓰는 응답입니다.
+const notFound = (res: express.Response, description: string) => {
+  res
+    .status(400)
+    .json(createErrorResponse("failed", "Failed to Load", description));
+};
+
+app.get("/tracks", async (req, res) => {
+  // 모든 페이지 진입마다 호출되지만 곡이 추가될 때만 바뀌는 데이터입니다.
+  const results = await getAllTracks();
   if (!results.length) {
     res
       .status(400)
@@ -587,6 +627,14 @@ app.get("/track/:name", async (req, res) => {
 app.get("/trackInfo/:filename", async (req, res) => {
   // 곡을 고를 때마다 호출되지만 패턴이 갱신될 때만 바뀌는 데이터입니다.
   const filename = req.params.filename;
+  if (!isValidFileName(filename)) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse("failed", "Wrong Format", "Invalid track name."),
+      );
+    return;
+  }
   const results = await getOrSet(
     "trackInfo",
     keys.trackInfo(filename),
@@ -945,7 +993,11 @@ app.put("/playRecord", async (req, res) => {
   const bullet = toFiniteNonNegInt(req.body.bullet);
   const score = toFiniteNonNegInt(req.body.score);
   const maxCombo = toFiniteNonNegInt(req.body.maxCombo);
-  const difficultySelection = toFiniteNonNegInt(req.body.difficultySelection);
+  // 난이도 선택은 1부터 시작하는 작은 정수입니다. 이 값은 캐시 그룹 키에도
+  // 쓰이므로 범위를 고정합니다.
+  const difficultySelection = toDifficultySelection(
+    req.body.difficultySelection,
+  );
   const difficulty = Number(req.body.difficulty);
   if (
     perfect === null ||
@@ -1087,6 +1139,14 @@ app.get("/record/:index", async (req, res) => {
   // 프로필의 최근 플레이 10건이 한꺼번에 호출합니다. isBest/rating은 이후 플레이로
   // 바뀔 수 있어 짧은 TTL만 적용하고 별도 무효화는 하지 않습니다.
   const index = req.params.index;
+  if (!isValidRecordIndex(index)) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse("failed", "Wrong Format", "Invalid record index."),
+      );
+    return;
+  }
   const results = await getOrSet(
     "record",
     keys.record(index),
@@ -1120,6 +1180,16 @@ app.get("/record/:index", async (req, res) => {
 // 요청 한 번으로 대체합니다.
 app.get("/trackRecords/:nickname", async (req, res) => {
   const nickname = req.params.nickname;
+  if (!isValidNickname(nickname)) {
+    res
+      .status(400)
+      .json(createErrorResponse("failed", "Wrong Format", "Invalid nickname."));
+    return;
+  }
+  if (!(await nicknameExists(nickname))) {
+    notFound(res, "Cannot find user.");
+    return;
+  }
   const records = await getOrSet(
     "bestRecord",
     keys.trackRecords(nickname),
@@ -1162,45 +1232,41 @@ app.get("/trackRecords/:nickname", async (req, res) => {
 // /record/:index를 호출하던 것을 요청 한 번으로 대체합니다.
 app.get("/recentPlays/:uid", async (req, res) => {
   const uid = req.params.uid;
-  const results = await getOrSet(
-    "record",
-    keys.recentPlays(uid),
-    async () => {
-      const users = await knex("users").select("recentPlay").where("userid", uid);
-      if (!users.length) return null;
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(users[0].recentPlay);
-      } catch {
-        parsed = [];
-      }
-      const indexes = Array.isArray(parsed)
-        ? parsed.filter((v): v is string => typeof v === "string").slice(0, 10)
-        : [];
-      if (!indexes.length) return [];
-      const rows = await knex("trackRecords")
-        .select(
-          "index",
-          "filename",
-          "rank",
-          "record",
-          "maxcombo",
-          "medal",
-          "difficulty",
-          "date",
-          "judge",
-          "isBest",
-          "accuracy",
-          "rating",
-        )
-        .whereIn("index", indexes);
-      // recentPlay는 최신순이므로, whereIn이 흐트러뜨린 순서를 되돌립니다.
-      const byIndex = new Map(rows.map((row) => [row.index, row]));
-      return indexes
-        .map((index) => byIndex.get(index))
-        .filter((row) => row !== undefined);
-    },
-  );
+  const results = await getOrSet("record", keys.recentPlays(uid), async () => {
+    const users = await knex("users").select("recentPlay").where("userid", uid);
+    if (!users.length) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(users[0].recentPlay);
+    } catch {
+      parsed = [];
+    }
+    const indexes = Array.isArray(parsed)
+      ? parsed.filter((v): v is string => typeof v === "string").slice(0, 10)
+      : [];
+    if (!indexes.length) return [];
+    const rows = await knex("trackRecords")
+      .select(
+        "index",
+        "filename",
+        "rank",
+        "record",
+        "maxcombo",
+        "medal",
+        "difficulty",
+        "date",
+        "judge",
+        "isBest",
+        "accuracy",
+        "rating",
+      )
+      .whereIn("index", indexes);
+    // recentPlay는 최신순이므로, whereIn이 흐트러뜨린 순서를 되돌립니다.
+    const byIndex = new Map(rows.map((row) => [row.index, row]));
+    return indexes
+      .map((index) => byIndex.get(index))
+      .filter((row) => row !== undefined);
+  });
   if (results === null) {
     res
       .status(400)
@@ -1216,6 +1282,24 @@ app.get("/record/:filename/:nickname", async (req, res) => {
   // 곡별 단건 조회입니다. 곡 선택 화면은 /trackRecords/:nickname을 쓰지만,
   // 기존 클라이언트를 위해 유지합니다.
   const { filename, nickname } = req.params;
+  if (!isValidFileName(filename) || !isValidNickname(nickname)) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Wrong Format",
+          "Invalid track or user name.",
+        ),
+      );
+    return;
+  }
+  // 미플레이 곡의 빈 결과까지 캐싱하는 경로이므로, 존재하지 않는 조합으로
+  // 캐시가 부풀지 않도록 실재 여부를 먼저 확인합니다.
+  if (!(await trackExists(filename)) || !(await nicknameExists(nickname))) {
+    notFound(res, "Cannot find track or user.");
+    return;
+  }
   const results = await getOrSet(
     "bestRecord",
     keys.bestRecord(nickname, filename),
@@ -1238,30 +1322,37 @@ app.get("/record/:filename/:nickname", async (req, res) => {
 
 app.get("/bestRecords/:nickname", async (req, res) => {
   const nickname = req.params.nickname;
-  const results = await getOrSet(
-    "bestRecord",
-    keys.bestRecords(nickname),
-    () =>
-      knex("trackRecords")
-        .select(
-          "filename",
-          "rank",
-          "record",
-          "maxcombo",
-          "medal",
-          "difficulty",
-          "date",
-          "judge",
-          "isBest",
-          "accuracy",
-          "rating",
-        )
-        .where("nickname", nickname)
-        .whereNot("rating", 0)
-        .orderBy("difficulty", "desc")
-        .orderBy("rating", "desc")
-        // 응답은 어차피 10건만 사용하므로 DB에서부터 잘라 옵니다.
-        .limit(10),
+  if (!isValidNickname(nickname)) {
+    res
+      .status(400)
+      .json(createErrorResponse("failed", "Wrong Format", "Invalid nickname."));
+    return;
+  }
+  if (!(await nicknameExists(nickname))) {
+    notFound(res, "Cannot find user.");
+    return;
+  }
+  const results = await getOrSet("bestRecord", keys.bestRecords(nickname), () =>
+    knex("trackRecords")
+      .select(
+        "filename",
+        "rank",
+        "record",
+        "maxcombo",
+        "medal",
+        "difficulty",
+        "date",
+        "judge",
+        "isBest",
+        "accuracy",
+        "rating",
+      )
+      .where("nickname", nickname)
+      .whereNot("rating", 0)
+      .orderBy("difficulty", "desc")
+      .orderBy("rating", "desc")
+      // 응답은 어차피 10건만 사용하므로 DB에서부터 잘라 옵니다.
+      .limit(10),
   );
   res.status(200).json({ result: "success", results });
 });
@@ -1285,7 +1376,30 @@ app.get(
       return;
     }
 
-    const { fileName, difficulty, nickname } = req.params;
+    const { fileName, nickname } = req.params;
+    // 캐시 키를 이루는 나머지 파라미터도 형식을 고정합니다.
+    const difficulty = toDifficultySelection(req.params.difficulty);
+    if (
+      difficulty === null ||
+      !isValidFileName(fileName) ||
+      !isValidNickname(nickname)
+    ) {
+      res
+        .status(400)
+        .json(
+          createErrorResponse(
+            "failed",
+            "Wrong Format",
+            "Invalid track, difficulty or user name.",
+          ),
+        );
+      return;
+    }
+    if (!(await trackExists(fileName))) {
+      notFound(res, "Cannot find track.");
+      return;
+    }
+
     // 순위표와 개인 순위는 같은 곡·난이도의 기록이 갱신될 때 함께 무효화되어야 하므로
     // 하나의 캐시 그룹으로 묶습니다.
     const group = keys.leaderboardGroup(fileName, difficulty);
@@ -1306,10 +1420,12 @@ app.get(
     );
 
     // 요청자 순위는 자신의 기록보다 앞선 인원 수를 COUNT로 계산합니다.
+    // 기록이 없으면 null을 반환합니다. getOrSet은 null을 저장하지 않으므로,
+    // 존재하지 않는 닉네임을 반복 조회해 순위 캐시 키를 늘리는 것을 막습니다.
     const rank = await getOrSet(
       "leaderboard",
       keys.leaderboardRank(fileName, difficulty, order, sort, nickname),
-      async () => {
+      async (): Promise<number | null> => {
         const self = await knex("trackRecords")
           .select(order)
           .where("filename", fileName)
@@ -1317,7 +1433,7 @@ app.get(
           .where("isBest", 1)
           .where("nickname", nickname)
           .first();
-        if (!self) return 0;
+        if (!self) return null;
         const op = sort === "desc" ? ">" : "<";
         const [{ better }] = await knex("trackRecords")
           .where("filename", fileName)
@@ -1329,7 +1445,8 @@ app.get(
       },
       { group },
     );
-    res.status(200).json({ result: "success", results, rank });
+    // 기록이 없는 경우의 응답값(0)은 기존 클라이언트와 동일하게 유지합니다.
+    res.status(200).json({ result: "success", results, rank: rank ?? 0 });
   },
 );
 
