@@ -6,7 +6,7 @@ import { knex } from "./db";
 import { getOrSet, invalidate, keys } from "./cache";
 import { parseJson } from "./validate";
 
-// 게임 서버 알림 호출의 상한입니다. 실시간 알림이므로 짧게 잡습니다.
+// 실시간 알림이므로 짧게 잡습니다.
 const GAME_SERVER_TIMEOUT_MS = 3000;
 
 interface Data {
@@ -94,16 +94,8 @@ const achievedIndex = async (context: string, data?: Data) => {
   return index;
 };
 
-/**
- * 업적 처리 본체입니다.
- *
- * 이 함수는 요청 처리 흐름 밖에서 fire-and-forget으로 호출되므로, 여기서 던진
- * 예외는 라우트의 try/catch나 Express 에러 핸들러에 잡히지 않고 그대로
- * unhandledRejection이 됩니다(Node 15+ 기본 동작은 프로세스 종료). 그래서
- * 아래 observer가 전체를 감싸 반드시 자체적으로 흡수합니다.
- */
+// 업적 처리 본체입니다. 예외는 아래 observer가 흡수합니다.
 const runObserver = async (userid: string, context: string, data?: Data) => {
-  // 필요한 컬럼만 읽습니다(기존에는 users 행 전체를 SELECT 했습니다).
   const userData = await knex("users")
     .select("achievements", "ownedAlias", "banner", "alias")
     .where("userid", userid);
@@ -111,7 +103,6 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
     signale.debug(`Achievement observer got unknown userid ${userid}.`);
     return;
   }
-  // JSON 컬럼이 손상되어 있어도 업적 처리가 통째로 실패하지 않도록 방어합니다.
   const achievements = new Set(
     parseJson<number[]>(userData[0].achievements) ?? [],
   );
@@ -133,9 +124,7 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
   }
 
   // RANK는 순위에서 밀려났을 때 칭호를 회수해야 하므로, 달성 목록이 비어도
-  // 아래 alias 재조정까지 진행해야 합니다. 이 조기 반환이 context를 가리지
-  // 않았던 탓에 100위 밖으로 밀려난 사용자의 랭크 칭호(8~11)가 회수되지
-  // 않고 영구히 남아 있었습니다.
+  // 아래 alias 재조정까지 진행합니다.
   if (context !== "RANK" && !filteredIndex.length) return;
 
   const achievementsList: Array<Achievement> = [];
@@ -147,7 +136,6 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
       .catch((err: Error) => signale.error(err));
     achievements.add(i);
     // TODO: Find more elegant way to get i18n-ed data
-    // 업적 메타데이터는 사실상 불변이므로 캐싱해 기록 제출 경로의 조회를 줄입니다.
     const achievement = await getOrSet<Achievement[]>(
       "achievements",
       keys.achievement(i),
@@ -174,8 +162,8 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
     else if (index.includes(idDB.TOP_50)) ownedAlias.add(9);
     else if (index.includes(idDB.TOP_100)) ownedAlias.add(8);
     if (!ownedAlias.has(selectedAlias)) {
-      // 소유 목록이 비면 pop()이 undefined를 돌려주고, 그대로 UPDATE에 넘기면
-      // knex가 "Undefined binding"으로 실패합니다. 기본 칭호(0)로 되돌립니다.
+      // 비어 있으면 pop()이 undefined를 돌려주고 knex가 "Undefined binding"으로
+      // 실패합니다. 기본 칭호(0)로 되돌립니다.
       selectedAlias = Array.from(ownedAlias).pop() ?? 0;
     }
   }
@@ -202,9 +190,8 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
     alias: selectedAlias,
   };
 
-  // 실제로 바뀐 게 없으면 쓰기와 캐시 무효화를 건너뜁니다.
-  // 일일 랭크 잡은 전체 사용자에 대해 이 함수를 호출하므로, 대부분을 차지하는
-  // "변화 없음" 경우에 UPDATE와 캐시 삭제가 사용자 수만큼 발생했습니다.
+  // 일일 랭크 잡이 전체 사용자에 대해 호출하므로, 변화가 없으면 쓰기와
+  // 캐시 무효화를 건너뜁니다.
   const unchanged =
     updated.achievements ===
       JSON.stringify(parseJson<number[]>(userData[0].achievements) ?? []) &&
@@ -223,7 +210,6 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
         signale.error(err);
       });
 
-    // 칭호·배너가 바뀌었으므로 프로필 캐시를 비웁니다.
     await invalidate(keys.profile(userid), keys.user(userid));
   }
 
@@ -239,9 +225,8 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
         secret: config.project.secretKey,
         achievement: achievementsList,
       }),
-      // node-fetch는 기본 타임아웃이 없습니다. 게임 서버가 응답하지 않으면
-      // 이 프로미스가 영원히 열린 채 소켓을 점유하므로 상한을 둡니다.
-      // 업적 알림은 실패해도 되는 부가 기능이라 그대로 흘려보냅니다.
+      // node-fetch는 기본 타임아웃이 없어, 게임 서버가 응답하지 않으면
+      // 프로미스가 열린 채 소켓을 점유합니다.
       signal: AbortSignal.timeout(GAME_SERVER_TIMEOUT_MS),
     }).catch((err) => {
       signale.error(err);
@@ -250,9 +235,9 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
 };
 
 /**
- * 업적 처리를 호출합니다. 실패해도 호출자의 흐름(기록 저장, 튜토리얼 완료 등)을
- * 되돌리지 않고 로그만 남깁니다. 어떤 경우에도 거부된 프로미스를 밖으로
- * 내보내지 않으므로 호출부에서 await나 .catch를 붙이지 않아도 안전합니다.
+ * 업적 처리를 호출합니다. 거부된 프로미스를 밖으로 내보내지 않으므로 호출부에서
+ * await나 .catch 없이 불러도 안전합니다. 요청 흐름 밖에서 호출되는 함수라
+ * 예외가 새어 나가면 unhandledRejection으로 프로세스가 종료됩니다.
  */
 export const observer = async (
   userid: string,

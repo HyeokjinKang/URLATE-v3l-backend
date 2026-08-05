@@ -42,15 +42,13 @@ import {
 
 import { defaultSettings, normalizeSettings } from "./settings";
 
-// 마지막 안전망입니다. Node 15+는 처리되지 않은 프로미스 거부에서 프로세스를
-// 종료하므로, 로그만 남기고 살아남게 해 단발성 오류가 전체 서비스를 끊지 않도록 합니다.
+// Node 15+는 처리되지 않은 프로미스 거부에서 프로세스를 종료합니다.
 process.on("unhandledRejection", (reason) => {
   signale.error("Unhandled promise rejection:");
   signale.error(reason);
 });
 
-// uncaughtException 이후의 프로세스 상태는 신뢰할 수 없으므로 기록 후 종료하고
-// 프로세스 매니저(pm2)의 재시작에 맡깁니다.
+// uncaughtException 이후의 상태는 신뢰할 수 없어 pm2 재시작에 맡깁니다.
 process.on("uncaughtException", (err) => {
   signale.fatal("Uncaught exception, shutting down:");
   signale.fatal(err);
@@ -62,7 +60,7 @@ const gidClient = new OAuth2Client(config.google.clientId);
 const app = express();
 app.locals.pretty = true;
 
-// Express 버전을 노출하지 않습니다(취약 버전 탐색의 출발점이 됩니다).
+// 버전 노출을 막습니다.
 app.disable("x-powered-by");
 
 const redisStore = new RedisStore({
@@ -70,11 +68,10 @@ const redisStore = new RedisStore({
   prefix: "urlate:",
 });
 
-// production 이외의 모드에서만 secure 쿠키를 해제합니다(로컬 HTTP 개발용).
+// 로컬 HTTP 개발용으로 test 모드에서만 secure 쿠키를 해제합니다.
 const isProduction = config.project.mode !== "test";
 
-// 리버스 프록시(HTTPS 종단) 뒤에서 X-Forwarded-Proto를 신뢰하여
-// secure 쿠키가 정상 동작하도록 합니다.
+// HTTPS를 종단하는 프록시 뒤이므로 X-Forwarded-Proto를 신뢰해야 secure 쿠키가 동작합니다.
 app.set("trust proxy", 1);
 
 const sessionMiddleware = session({
@@ -93,17 +90,11 @@ const sessionMiddleware = session({
 });
 
 /**
- * CSRF 방어입니다.
+ * CSRF 방어입니다. SameSite=lax는 상위 도메인을 공유하는 사이트끼리 쿠키를
+ * 그대로 보내므로, Origin(없으면 Referer)을 신뢰 목록과 대조하는 계층을 더 둡니다.
  *
- * 지금까지 방어는 세션 쿠키의 SameSite=lax 하나에만 의존했습니다. lax는 상위
- * 도메인을 공유하는 사이트(example.com <-> api.example.com) 사이에서는 쿠키를
- * 그대로 실어 보내므로, 서브도메인 중 하나라도 장악되면 모든 상태 변경 요청이
- * 통과합니다. 그래서 Origin(없으면 Referer)을 신뢰 목록과 대조하는 계층을
- * 하나 더 둡니다.
- *
- * Origin과 Referer가 모두 없는 요청은 통과시킵니다. 브라우저는 상태 변경
- * 요청에 Origin을 반드시 붙이므로, 이 경우는 서버 간 호출(프론트엔드 ->
- * 백엔드)이며 그 경로는 project secret으로 따로 인증합니다.
+ * 둘 다 없는 요청은 통과시킵니다. 브라우저는 상태 변경 요청에 Origin을 반드시
+ * 붙이므로 이 경우는 서버 간 호출이며, 그 경로는 project secret으로 인증합니다.
  */
 const CSRF_SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -122,7 +113,7 @@ const toOrigin = (value?: string): string | null => {
   }
 };
 
-// 요청이 밝힌 출처입니다. 브라우저가 아니면 null입니다.
+// 브라우저가 아니면 null입니다.
 const requestOrigin = (req: express.Request): string | null =>
   toOrigin(req.get("origin")) ?? toOrigin(req.get("referer"));
 
@@ -159,16 +150,8 @@ const csrfGuard = (
   forbiddenOrigin(res);
 };
 
-/**
- * 로그인이 필요한 라우트에 붙입니다.
- *
- * 같은 세션 확인 블록이 다섯 곳에 그대로 복제되어 있었습니다. 인가 검사를
- * 복사해 쓰면 한 곳을 고칠 때 나머지를 빠뜨리기 쉽습니다(실제로 이번 리뷰에서
- * 발견한 /profile의 인가 누락도 그런 형태였습니다).
- *
- * 응답 본문은 기존과 동일하게 유지합니다. 클라이언트가 result/error 필드로
- * 분기하고 있어 바꾸면 호환이 깨집니다.
- */
+// 로그인이 필요한 라우트에 붙입니다.
+// 응답 본문은 바꾸지 마세요. 클라이언트가 result/error 필드로 분기합니다.
 const requireLogin = (
   req: express.Request,
   res: express.Response,
@@ -189,7 +172,7 @@ const requireLogin = (
   next();
 };
 
-// Redis 기반 rate limiter. PM2 클러스터 환경에서도 인스턴스 간 카운터가 공유됩니다.
+// Redis 기반이라 인스턴스를 늘려도 카운터가 공유됩니다.
 const rateLimit =
   (options: { windowSec: number; max: number; prefix: string }) =>
   async (
@@ -197,8 +180,7 @@ const rateLimit =
     res: express.Response,
     next: express.NextFunction,
   ) => {
-    // 캐시 계층과 마찬가지로 연결 상태를 먼저 확인합니다. 이 검사가 없으면
-    // Redis가 끊긴 동안 명령이 실패하면서 요청마다 예외 처리 비용을 냅니다.
+    // 끊겨 있으면 명령마다 예외가 나므로 먼저 확인합니다.
     if (!isRedisReady()) {
       next();
       return;
@@ -223,38 +205,33 @@ const rateLimit =
         return;
       }
     } catch (err) {
-      // Redis 장애 시 요청을 막지 않고 통과시킵니다(가용성 우선). 오류는 기록합니다.
+      // Redis 장애 시 요청을 막지 않고 통과시킵니다(가용성 우선).
       signale.error(err);
     }
     next();
   };
 
-// JSON API 응답에 대한 최소 보안 헤더입니다. CORS 헤더는 SECURITY.md대로
-// 리버스 프록시가 담당하므로 여기서 설정하지 않습니다(중복 시 브라우저가 차단).
+// CORS 헤더는 프록시가 담당합니다. 여기서도 넣으면 중복되어 브라우저가 차단합니다.
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  // API 응답은 브라우저나 중간 캐시가 보관해서는 안 됩니다.
-  // 본인 데이터(/user 등)가 공유 캐시에 남는 것을 막습니다.
+  // 본인 데이터(/user 등)가 공유 캐시에 남지 않도록 합니다.
   res.setHeader("Cache-Control", "no-store");
   next();
 });
 
-// rate limit을 세션 조회·본문 파싱보다 먼저 통과시킵니다. 이전에는 차단될
-// 요청도 Redis 세션 조회와 본문 파싱 비용을 모두 지불했습니다.
+// 차단될 요청이 세션 조회와 본문 파싱 비용을 치르지 않도록 앞에 둡니다.
 app.use(rateLimit({ windowSec: 60, max: 600, prefix: "global" }));
 
 app.use(sessionMiddleware);
-// 본문 크기 상한을 명시합니다. 기본값(100kb)에 의존하지 않고, 가장 큰 본문인
-// 리플레이 로그를 담을 수 있는 선에서 고정합니다.
+// 가장 큰 본문인 리플레이 로그를 담을 수 있는 선으로 고정합니다(기본값은 100kb).
 app.use(express.json({ limit: "512kb" }));
 app.use(express.urlencoded({ extended: true, limit: "64kb" }));
 app.use(cookieParser());
 
-// Express 5는 본문 파서가 처리하지 못한 요청(Content-Type 불일치, 본문 없음)의
-// req.body를 undefined로 둡니다. Express 4는 {}였습니다. 라우트들이 req.body.x를
-// 곧바로 읽으므로, 헤더 하나만 어긋나도 TypeError가 나면서 400이어야 할 응답이
-// 500이 됩니다. 빈 객체로 맞춰 이 부류를 한 번에 없앱니다.
+// Express 5는 본문 파서가 처리하지 못한 요청의 req.body를 undefined로 둡니다
+// (Express 4는 {}). 라우트가 req.body.x를 곧바로 읽으므로 Content-Type 하나만
+// 어긋나도 400이어야 할 응답이 TypeError로 500이 됩니다.
 app.use((req, res, next) => {
   if (req.body === undefined) req.body = {};
   next();
@@ -270,10 +247,9 @@ const gidVerify = async (token: string, clientId: string) => {
   return ticket.getPayload();
 };
 
-// rating 인덱스(ZSET)를 users 테이블에서 다시 채웁니다.
-// 최초 기동이나 Redis 재시작 이후를 대비한 복구 경로입니다.
-// 성공한 뒤에도 락을 만료될 때까지 그대로 두어, 인덱스가 빈 동안 요청이 몰려도
-// users 전체 조회가 연달아 발생하지 않게 합니다(디바운스).
+// 최초 기동·Redis 재시작 이후 rating 인덱스를 복구합니다.
+// 성공해도 락을 만료까지 두어, 인덱스가 빈 동안 users 전체 조회가 연달아
+// 발생하지 않게 합니다.
 const rebuildRatingIndexIfNeeded = async () => {
   if (!(await acquireRebuildLock())) return;
   try {
@@ -281,28 +257,26 @@ const rebuildRatingIndexIfNeeded = async () => {
     await rebuildRatingIndex(users);
   } catch (err) {
     signale.error(err);
-    // 실패한 시도는 곧바로 다시 시도할 수 있도록 락을 풉니다.
+    // 실패하면 곧바로 재시도할 수 있도록 락을 풉니다.
     await releaseRebuildLock();
   }
 };
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const updateRankHistory = schedule.scheduleJob("59 23 * * *", async () => {
-  // 스케줄 콜백에서 던진 예외는 잡아 줄 호출자가 없어 그대로
-  // unhandledRejection이 됩니다. 전체를 감싸 프로세스를 지킵니다.
+  // 스케줄 콜백의 예외는 잡아 줄 호출자가 없어 unhandledRejection이 됩니다.
   try {
-    // 여러 인스턴스가 같은 날 랭크를 중복 기록하지 않도록 실행권을 먼저 잡습니다.
+    // 인스턴스 간 중복 기록을 막습니다.
     if (!(await acquireDailyJobLock("rank-history"))) return;
     signale.info(new Date());
     signale.pending(`Updating rank history...`);
     const users = await knex("users")
       .select("userid", "rankHistory", "rating")
       .orderBy("rating", "desc");
-    // 하루 한 번 rating 인덱스를 통째로 다시 만들어 증분 갱신에서 생길 수 있는
-    // 누락을 바로잡습니다.
+    // 증분 갱신에서 생길 수 있는 누락을 하루 한 번 바로잡습니다.
     await rebuildRatingIndex(users);
     for (let i = 0; i < users.length; i++) {
-      // rankHistory가 손상된 사용자 한 명 때문에 작업 전체가 멈추지 않게 합니다.
+      // 한 사용자의 손상된 값 때문에 작업 전체가 멈추지 않게 합니다.
       const previous = parseJson(users[i].rankHistory);
       const history = [...(Array.isArray(previous) ? previous : []), i + 1];
       await knex("users")
@@ -324,8 +298,7 @@ const updateRankHistory = schedule.scheduleJob("59 23 * * *", async () => {
           }
         }
       }
-      // 순차 처리로 동시 실행 수를 1로 묶습니다. 유저 수만큼의 쿼리가
-      // 한꺼번에 풀(max 7)로 몰리는 것을 막습니다.
+      // 순차 처리로 유저 수만큼의 쿼리가 풀(max 7)에 몰리는 것을 막습니다.
       await observer(`${users[i].userid}`, "RANK", {
         rank100,
         rank50,
@@ -341,8 +314,7 @@ const updateRankHistory = schedule.scheduleJob("59 23 * * *", async () => {
   }
 });
 
-// 보관 기간이 지난 리플레이 로그를 매일 정리합니다. 플레이 1회당 파일 하나가
-// 쌓이므로 정리 경로가 없으면 디스크가 차고, 그러면 서버 전체가 멈춥니다.
+// 보관 기간이 지난 리플레이 로그를 매일 정리합니다.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const cleanupLogs = schedule.scheduleJob("30 4 * * *", async () => {
   try {
@@ -360,8 +332,7 @@ app.get("/auth/status", async (req, res) => {
     return;
   }
 
-  // 가입 여부는 한번 참이 되면 되돌아가지 않으므로 길게 캐싱해도 안전합니다.
-  // (가입 시점에 /auth/join에서 무효화합니다.)
+  // 가입 여부는 한번 참이 되면 되돌아가지 않아 길게 캐싱해도 안전합니다.
   const registered = await getOrSet(
     "authStatus",
     keys.authStatus(userid),
@@ -399,13 +370,13 @@ app.post(
           );
         return;
       }
-      // audience는 서버 설정값으로 고정합니다. 클라이언트가 보낸 clientId는 신뢰하지 않습니다.
+      // audience는 서버 설정값으로 고정합니다(클라이언트 clientId 불신).
       const payload = await gidVerify(
         req.body.jwt.credential,
         config.google.clientId,
       );
       if (payload) {
-        // 세션 고정(Session Fixation) 방지: 인증 성공 시 세션 ID를 재발급합니다.
+        // 세션 고정 방지를 위해 인증 성공 시 세션 ID를 재발급합니다.
         req.session.regenerate((regenErr) => {
           if (regenErr) {
             signale.error(regenErr);
@@ -504,9 +475,7 @@ app.post("/auth/join", async (req, res) => {
       scoreSum: "0",
       accuracy: "0",
       playtime: 0,
-      // users.1stNum은 더 이상 사용하지 않습니다. 1위 곡 수는 조회 시점에
-      // trackRecords에서 계산합니다(countFirstPlaces). 기존 스키마의 NOT NULL
-      // 제약을 고려해 컬럼은 그대로 두고 초기값만 넣습니다.
+      // 1stNum은 더 이상 읽지 않습니다(countFirstPlaces가 계산). 컬럼 제약 때문에 값만 채웁니다.
       "1stNum": 0,
       ap: 0,
       fc: 0,
@@ -515,7 +484,7 @@ app.post("/auth/join", async (req, res) => {
       achievements: "[]",
       explicit: 0,
     });
-    // 가입 즉시 로그인 상태로 보이도록 가입 여부 캐시를 비웁니다.
+    // 가입 즉시 로그인 상태로 보이도록 비웁니다.
     await invalidate(keys.authStatus(req.session.userid));
     await setRating(req.session.userid, 0);
     delete req.session.tempName;
@@ -539,7 +508,6 @@ app.get("/user", requireLogin, async (req, res) => {
   const userid = req.session.userid as string;
 
   // 본인 데이터이므로 키에 userid를 포함해 유저 간 교차 노출을 막습니다.
-  // 설정/튜토리얼/쿠폰/프로필 변경 시 즉시 무효화합니다.
   const results = await getOrSet(
     "user",
     keys.user(userid),
@@ -601,10 +569,7 @@ app.get("/profile/:uid", async (req, res) => {
         )
         .where("userid", uid);
       if (!rows.length) return rows;
-      // 1위 곡 수는 users 컬럼이 아니라 trackRecords에서 그때그때 셉니다.
-      // 카운터를 유지하면 1위를 빼앗긴 쪽의 값을 줄여 줄 수 없어 계속 부풀고,
-      // 한 번 어긋난 값은 스스로 회복되지 않습니다. 응답 필드 이름은 기존
-      // 클라이언트와 동일하게 유지합니다.
+      // 1위 곡 수는 컬럼이 아니라 trackRecords에서 셉니다. 필드 이름은 유지합니다.
       rows[0]["1stNum"] = await countFirstPlaces(rows[0].nickname);
       return rows;
     },
@@ -619,12 +584,11 @@ app.get("/profile/:uid", async (req, res) => {
     return;
   }
 
-  // 순위는 Redis Sorted Set으로 O(log N)에 계산합니다.
-  // ZCOUNT는 SQL의 COUNT(*) WHERE rating > ? 와 의미가 같아 동점자 처리도 동일합니다.
+  // 순위는 Redis Sorted Set으로 계산합니다. 동점자 처리는 SQL COUNT와 동일합니다.
   const rating = Number(results[0].rating);
   let higher = await countHigherRating(rating);
   if (higher === null) {
-    // 인덱스가 아직 없으면(최초 기동·Redis 재시작) DB로 폴백하고 백그라운드에서 채웁니다.
+    // 인덱스가 없으면 DB로 폴백하고 배경에서 채웁니다.
     const [row] = await knex("users")
       .where("rating", ">", results[0].rating)
       .count({ higher: "*" });
@@ -676,17 +640,12 @@ const getAllTracks = () =>
   );
 
 /**
- * 자유 입력 파라미터로 만들어지는 캐시 키의 개수를 실제 데이터 규모로 묶습니다.
+ * 캐시 계층에 닿기 전에 대상의 실재 여부를 확인합니다. 캐시 키는 요청 파라미터를
+ * 그대로 쓰고 빈 결과도 저장하므로, 없는 값을 반복 조회하는 것만으로 Redis에
+ * 쓰레기 키가 무한히 쌓입니다. 닉네임 형식이 허용하는 조합이 사실상 무한해
+ * 형식 검증만으로는 부족합니다.
  *
- * 캐시 키는 요청 파라미터를 그대로 사용하고 빈 결과도 저장하기 때문에, 검증이
- * 없으면 존재하지 않는 닉네임·곡 이름을 반복 조회하는 것만으로 Redis에 쓰레기
- * 키를 무제한 적재할 수 있었습니다. 형식 검증만으로는 부족합니다(닉네임 형식이
- * 허용하는 조합 자체가 사실상 무한하므로). 그래서 캐시 계층에 도달하기 전에
- * 대상이 실제로 존재하는지 확인합니다.
- *
- * 두 검사 모두 기존 캐시 키(tracks:all, pic:*)를 재사용하므로 정상 요청에서는
- * 추가 DB 조회가 발생하지 않고, 존재하지 않는 값은 cacheEmpty: false 때문에
- * 캐시에 남지 않습니다.
+ * 두 검사 모두 기존 캐시 키를 재사용하므로 정상 요청에는 추가 조회가 없습니다.
  */
 const trackExists = async (fileName: string): Promise<boolean> => {
   const tracks = await getAllTracks();
@@ -711,7 +670,7 @@ const notFound = (res: express.Response, description: string) => {
 };
 
 app.get("/tracks", async (req, res) => {
-  // 모든 페이지 진입마다 호출되지만 곡이 추가될 때만 바뀌는 데이터입니다.
+  // 페이지 진입마다 호출되지만 곡이 추가될 때만 바뀝니다.
   const results = await getAllTracks();
   if (!results.length) {
     res
@@ -764,7 +723,7 @@ app.get("/track/:name", async (req, res) => {
 });
 
 app.get("/trackInfo/:filename", async (req, res) => {
-  // 곡을 고를 때마다 호출되지만 패턴이 갱신될 때만 바뀌는 데이터입니다.
+  // 곡을 고를 때마다 호출되지만 패턴이 갱신될 때만 바뀝니다.
   const filename = req.params.filename;
   if (!isValidFileName(filename)) {
     res
@@ -800,8 +759,7 @@ app.get("/trackInfo/:filename", async (req, res) => {
 
 app.put("/settings", requireLogin, async (req, res) => {
   const userid = req.session.userid as string;
-  // 기본 설정을 스키마 삼아 정규화합니다. 알 수 없는 키와 타입이 어긋난 값은
-  // 버려지므로 저장되는 내용과 크기가 항상 고정됩니다.
+  // 기본 설정을 스키마 삼아 정규화합니다. 알 수 없는 키와 타입 불일치는 버려집니다.
   if (req.body.settings === undefined || req.body.settings === null) {
     res
       .status(400)
@@ -832,11 +790,9 @@ app.put("/settings", requireLogin, async (req, res) => {
   res.status(200).json(createSuccessResponse("success"));
 });
 
-// /profile/:element의 요소별 인가 정책입니다.
-// - "user"  : 본인 세션으로 바꿀 수 있는 값(장착 칭호·배너 표시 여부)입니다.
-//             내부 서비스도 secret을 제시하면 대신 수행할 수 있습니다.
-// - "service": 프론트엔드 이미지 업로드 파이프라인만 설정할 수 있는 값입니다.
-//             NSFW 판정 결과(explicit)와 함께 들어와야 하므로 세션만으로는 허용하지 않습니다.
+// 요소별 인가 정책입니다.
+// - user   : 본인 세션 또는 유효한 secret으로 변경 가능
+// - service: 유효한 secret 필수. NSFW 판정 결과와 함께 들어와야 하므로 세션만으로는 불가
 const PROFILE_ELEMENT_POLICY: Record<string, "user" | "service"> = {
   alias: "user",
   banner: "user",
@@ -859,10 +815,8 @@ app.put("/profile/:element", async (req, res) => {
     return;
   }
 
-  // 신원과 신뢰 수준을 분기 이전에 한 번만 확정합니다.
-  // 예전에는 첫 가드가 secret의 "존재 여부"만 확인하고 값 검증은 background/picture
-  // 분기 안에서만 했기 때문에, alias/banner는 아무 문자열이나 secret으로 보내면
-  // 미인증 상태로 임의 userid를 지정할 수 있었습니다.
+  // 신원과 신뢰 수준은 분기 이전에 한 번만 확정합니다. 분기 안에서 따로
+  // 검증하면 빠뜨린 분기가 그대로 인가 우회가 됩니다.
   const hasValidSecret = isValidSecret(req.body.secret);
   const isService = hasValidSecret && typeof req.body.userid === "string";
   const userid: string | undefined = req.session.userid
@@ -910,11 +864,11 @@ app.put("/profile/:element", async (req, res) => {
         );
       return;
     }
-    // background(2), picture(1) explicit 여부를 담는 비트필드입니다.
+    // explicit 비트필드입니다(2=background, 1=picture).
     let explicit = Number(users[0].explicit);
     switch (req.params.element) {
       case "alias": {
-        // 소유한 alias(칭호)만 장착할 수 있도록 검증합니다.
+        // 소유한 칭호만 장착할 수 있습니다.
         const ownedAlias = parseJson<number[]>(users[0].ownedAlias) ?? [];
         const selected = Number(req.body.value);
         if (!Number.isInteger(selected) || !ownedAlias.includes(selected)) {
@@ -933,22 +887,21 @@ app.put("/profile/:element", async (req, res) => {
         break;
       }
       case "background":
-        // secret 검증은 라우트 진입부의 인가 단계에서 이미 끝났습니다.
-        // background explicit = 비트 1(값 2)
+        // secret 검증은 진입부에서 끝났습니다.
         explicit = req.body.explicit ? explicit | 2 : explicit & ~2;
         await knex("users")
           .update({ background: req.body.value, explicit })
           .where("userid", userid);
         break;
       case "picture":
-        // picture explicit = 비트 0(값 1)
+
         explicit = req.body.explicit ? explicit | 1 : explicit & ~1;
         await knex("users")
           .update({ picture: req.body.value, explicit })
           .where("userid", userid);
         break;
       case "banner": {
-        // 배너는 가시성 토글((-) 마커)만 허용합니다. 소유 목록 자체는 변경할 수 없습니다.
+        // 가시성 토글((-) 마커)만 허용하고 소유 목록은 바꿀 수 없습니다.
         const submitted: unknown =
           typeof req.body.value === "string"
             ? parseJson(req.body.value)
@@ -988,7 +941,7 @@ app.put("/profile/:element", async (req, res) => {
         break;
       }
     }
-    // 변경된 프로필이 곧바로 보이도록 관련 캐시를 비웁니다.
+    // 변경이 곧바로 보이도록 비웁니다.
     await invalidate(
       keys.profile(userid),
       keys.user(userid),
@@ -1071,10 +1024,10 @@ app.put("/playRecord", requireLogin, async (req, res) => {
     return;
   }
 
-  // 신원은 세션에서 확정된 값만 신뢰합니다. 클라이언트가 보낸 userid/username은 사용하지 않습니다.
+  // 신원은 세션에서 확정된 값만 씁니다. 클라이언트가 보낸 userid/username은 무시합니다.
   const nickname: string = results[0].nickname;
 
-  // 파일 이름은 파일 경로와 DB 조회에 쓰이므로 안전한 형식만 허용합니다.
+  // 파일 경로와 DB 조회에 쓰이므로 형식을 제한합니다.
   const fileName = req.body.fileName;
   if (!isValidFileName(fileName) || !isValidNickname(nickname)) {
     res
@@ -1089,7 +1042,7 @@ app.put("/playRecord", requireLogin, async (req, res) => {
     return;
   }
 
-  // 판정 카운트/점수/콤보는 유한한 비음수 정수만 허용합니다(이상치·치팅 방지).
+  // 판정 카운트·점수·콤보는 유한한 비음수 정수만 허용합니다.
   const perfect = toFiniteNonNegInt(req.body.perfect);
   const great = toFiniteNonNegInt(req.body.great);
   const good = toFiniteNonNegInt(req.body.good);
@@ -1098,8 +1051,7 @@ app.put("/playRecord", requireLogin, async (req, res) => {
   const bullet = toFiniteNonNegInt(req.body.bullet);
   const score = toFiniteNonNegInt(req.body.score);
   const maxCombo = toFiniteNonNegInt(req.body.maxCombo);
-  // 난이도 선택은 1부터 시작하는 작은 정수입니다. 이 값은 캐시 그룹 키에도
-  // 쓰이므로 범위를 고정합니다.
+  // 캐시 그룹 키에도 쓰이므로 범위를 고정합니다.
   const difficultySelection = toDifficultySelection(
     req.body.difficultySelection,
   );
@@ -1171,9 +1123,9 @@ app.put("/playRecord", requireLogin, async (req, res) => {
       medal = 7;
     }
   }
-  // 서버가 재계산한 rank/accuracy와 클라이언트 주장이 일치하는지 확인합니다.
-  // NOTE: score(record) 자체는 여전히 클라이언트 계산값입니다. 완전한 치팅 방지에는
-  // 서버측 리플레이 재생 검증이 필요하며, 이는 후속 과제입니다.
+  // 서버가 재계산한 rank/accuracy와 클라이언트 주장을 대조합니다.
+  // score 자체는 여전히 클라이언트 계산값입니다. 완전한 치팅 방지에는 서버측
+  // 리플레이 재생 검증이 필요합니다.
   if (rank != req.body.rank || accuracy != Number(req.body.accuracy)) {
     res
       .status(400)
@@ -1187,7 +1139,6 @@ app.put("/playRecord", requireLogin, async (req, res) => {
     return;
   }
 
-  // 로그 경로는 검증된 세그먼트만으로 구성하고 최종 경로가 로그 루트 하위인지 확인합니다.
   if (!writeReplayLog(nickname, fileName, req.body.record)) {
     res
       .status(400)
@@ -1207,8 +1158,7 @@ app.put("/playRecord", requireLogin, async (req, res) => {
     medal,
   });
   try {
-    // 검증이 끝난 값만 기록 저장 계층으로 직접 넘깁니다.
-    // (이전에는 localhost로 자기 자신을 HTTP 재호출했습니다.)
+    // 검증이 끝난 값만 넘깁니다.
     await submitRecord({
       fileName,
       nickname,
@@ -1237,8 +1187,7 @@ app.put("/playRecord", requireLogin, async (req, res) => {
 });
 
 app.get("/record/:index", async (req, res) => {
-  // 프로필의 최근 플레이 10건이 한꺼번에 호출합니다. isBest/rating은 이후 플레이로
-  // 바뀔 수 있어 짧은 TTL만 적용하고 별도 무효화는 하지 않습니다.
+  // isBest/rating은 이후 플레이로 바뀌므로 짧은 TTL만 적용하고 무효화는 하지 않습니다.
   const index = req.params.index;
   if (!isValidRecordIndex(index)) {
     res
@@ -1276,9 +1225,7 @@ app.get("/record/:index", async (req, res) => {
   res.status(200).json({ result: "success", results });
 });
 
-// 한 유저의 곡별 최고 기록을 한 번에 돌려줍니다.
-// 곡 선택 화면이 트랙 수만큼 /record/:filename/:nickname을 호출하던 것을
-// 요청 한 번으로 대체합니다.
+// 곡 선택 화면이 트랙 수만큼 호출하던 것을 요청 한 번으로 대체합니다.
 app.get("/trackRecords/:nickname", async (req, res) => {
   const nickname = req.params.nickname;
   if (!isValidNickname(nickname)) {
@@ -1309,8 +1256,7 @@ app.get("/trackRecords/:nickname", async (req, res) => {
         .where("isBest", 1)
         .orderBy("filename", "asc")
         .orderBy("difficulty", "desc");
-      // 곡 이름을 키로 묶습니다. 각 배열은 /record/:filename/:nickname과 동일하게
-      // 난이도 내림차순입니다.
+      // /record/:filename/:nickname과 동일하게 난이도 내림차순입니다.
       const grouped: Record<string, Record<string, unknown>[]> = {};
       for (const row of rows) {
         if (!grouped[row.filename]) grouped[row.filename] = [];
@@ -1329,8 +1275,7 @@ app.get("/trackRecords/:nickname", async (req, res) => {
   res.status(200).json({ result: "success", records });
 });
 
-// 프로필의 최근 플레이 목록입니다. 클라이언트가 recentPlay의 id마다
-// /record/:index를 호출하던 것을 요청 한 번으로 대체합니다.
+// recentPlay의 id마다 /record/:index를 호출하던 것을 요청 한 번으로 대체합니다.
 app.get("/recentPlays/:uid", async (req, res) => {
   const uid = req.params.uid;
   const results = await getOrSet("record", keys.recentPlays(uid), async () => {
@@ -1357,7 +1302,7 @@ app.get("/recentPlays/:uid", async (req, res) => {
         "rating",
       )
       .whereIn("index", indexes);
-    // recentPlay는 최신순이므로, whereIn이 흐트러뜨린 순서를 되돌립니다.
+    // whereIn이 흐트러뜨린 순서를 recentPlay의 최신순으로 되돌립니다.
     const byIndex = new Map(rows.map((row) => [row.index, row]));
     return indexes
       .map((index) => byIndex.get(index))
@@ -1375,8 +1320,7 @@ app.get("/recentPlays/:uid", async (req, res) => {
 });
 
 app.get("/record/:filename/:nickname", async (req, res) => {
-  // 곡별 단건 조회입니다. 곡 선택 화면은 /trackRecords/:nickname을 쓰지만,
-  // 기존 클라이언트를 위해 유지합니다.
+  // 곡 선택 화면은 /trackRecords/:nickname을 쓰지만 기존 클라이언트를 위해 유지합니다.
   const { filename, nickname } = req.params;
   if (!isValidFileName(filename) || !isValidNickname(nickname)) {
     res
@@ -1390,8 +1334,7 @@ app.get("/record/:filename/:nickname", async (req, res) => {
       );
     return;
   }
-  // 미플레이 곡의 빈 결과까지 캐싱하는 경로이므로, 존재하지 않는 조합으로
-  // 캐시가 부풀지 않도록 실재 여부를 먼저 확인합니다.
+  // 빈 결과까지 캐싱하는 경로이므로 실재 여부를 먼저 확인합니다.
   if (!(await trackExists(filename)) || !(await nicknameExists(nickname))) {
     notFound(res, "Cannot find track or user.");
     return;
@@ -1406,8 +1349,7 @@ app.get("/record/:filename/:nickname", async (req, res) => {
         .where("filename", filename)
         .where("isBest", 1)
         .orderBy("difficulty", "DESC"),
-    // 아직 플레이하지 않은 곡의 빈 결과도 캐싱합니다.
-    // 곡 선택 화면에서는 이 경우가 오히려 다수이며, 그대로 두면 캐시 의미가 없습니다.
+    // 미플레이 곡의 빈 결과도 캐싱합니다. 곡 선택 화면에서는 이쪽이 다수입니다.
   );
   if (!results.length) {
     res.status(200).json(createSuccessResponse("empty"));
@@ -1447,7 +1389,7 @@ app.get("/bestRecords/:nickname", async (req, res) => {
       .whereNot("rating", 0)
       .orderBy("difficulty", "desc")
       .orderBy("rating", "desc")
-      // 응답은 어차피 10건만 사용하므로 DB에서부터 잘라 옵니다.
+      // 응답은 10건만 쓰므로 DB에서부터 잘라 옵니다.
       .limit(10),
   );
   res.status(200).json({ result: "success", results });
@@ -1458,7 +1400,7 @@ app.get(
   async (req, res) => {
     const order = req.params.order;
     const sort = (req.params.sort || "").toLowerCase();
-    // orderBy 컬럼/방향을 화이트리스트로 제한합니다(식별자 주입 방지).
+
     if (!TRACK_ORDER_COLUMNS.has(order) || !SORT_DIRECTIONS.has(sort)) {
       res
         .status(400)
@@ -1473,7 +1415,7 @@ app.get(
     }
 
     const { fileName, nickname } = req.params;
-    // 캐시 키를 이루는 나머지 파라미터도 형식을 고정합니다.
+    // 캐시 키를 이루는 파라미터이므로 형식을 고정합니다.
     const difficulty = toDifficultySelection(req.params.difficulty);
     if (
       difficulty === null ||
@@ -1496,11 +1438,9 @@ app.get(
       return;
     }
 
-    // 순위표와 개인 순위는 같은 곡·난이도의 기록이 갱신될 때 함께 무효화되어야 하므로
-    // 하나의 캐시 그룹으로 묶습니다.
+    // 같은 곡·난이도의 기록이 갱신되면 함께 비워야 하므로 한 그룹으로 묶습니다.
     const group = keys.leaderboardGroup(fileName, difficulty);
 
-    // 상위 100개만 조회합니다(전체 로드 방지).
     const results = await getOrSet(
       "leaderboard",
       keys.leaderboard(fileName, difficulty, order, sort),
@@ -1515,9 +1455,8 @@ app.get(
       { group },
     );
 
-    // 요청자 순위는 자신의 기록보다 앞선 인원 수를 COUNT로 계산합니다.
-    // 기록이 없으면 null을 반환합니다. getOrSet은 null을 저장하지 않으므로,
-    // 존재하지 않는 닉네임을 반복 조회해 순위 캐시 키를 늘리는 것을 막습니다.
+    // 자신보다 앞선 인원 수로 순위를 계산합니다. 기록이 없으면 null을 돌려
+    // 캐시에 남기지 않습니다(없는 닉네임으로 키가 늘어나는 것을 막습니다).
     const rank = await getOrSet(
       "leaderboard",
       keys.leaderboardRank(fileName, difficulty, order, sort, nickname),
@@ -1541,7 +1480,7 @@ app.get(
       },
       { group },
     );
-    // 기록이 없는 경우의 응답값(0)은 기존 클라이언트와 동일하게 유지합니다.
+    // 기록이 없을 때의 응답값 0은 기존 클라이언트와 동일하게 유지합니다.
     res.status(200).json({ result: "success", results, rank: rank ?? 0 });
   },
 );
@@ -1551,7 +1490,7 @@ app.put(
   rateLimit({ windowSec: 300, max: 30, prefix: "coupon" }),
   requireLogin,
   async (req, res) => {
-    // 비즈니스 검증 실패를 트랜잭션 롤백과 함께 전달하기 위한 에러 타입입니다.
+    // 검증 실패를 트랜잭션 롤백과 함께 전달하기 위한 타입입니다.
     class CouponError extends Error {
       constructor(
         public error: string,
@@ -1560,10 +1499,9 @@ app.put(
         super(description);
       }
     }
-    // requireLogin에서 세션이 확인되었으므로 트랜잭션 클로저에서 쓸 userid를 캡처합니다.
+
     const userid = req.session.userid as string;
-    // 코드는 DB 조회 조건으로 쓰이므로 문자열만 허용합니다.
-    // 객체/배열이 들어오면 knex가 의도치 않은 조건을 만들 수 있습니다.
+    // 객체/배열이 들어오면 knex가 의도치 않은 조회 조건을 만듭니다.
     const code = req.body.code;
     if (typeof code !== "string" || !code.length || code.length > 64) {
       res
@@ -1574,7 +1512,7 @@ app.put(
       return;
     }
     try {
-      // 동일 코드에 대한 동시 사용을 직렬화하기 위해 트랜잭션 + 행 잠금으로 처리합니다.
+      // 같은 코드의 동시 사용을 직렬화하기 위해 트랜잭션 + 행 잠금으로 처리합니다.
       await knex.transaction(async (trx) => {
         const couponArr = await trx("codes")
           .select("reward", "used", "usedUser")
@@ -1590,9 +1528,7 @@ app.put(
             "The code sent has already been used.",
           );
         }
-        // usedUser는 NULL이거나 "null"일 수 있습니다. 예전에는 조회 시에만
-        // 방어하고 아래 push에서는 그대로 호출해, nolimit 쿠폰의 첫 사용에서
-        // TypeError로 500이 나고 해당 쿠폰이 영구히 사용 불가가 되었습니다.
+        // usedUser는 NULL이거나 "null"일 수 있습니다.
         const parsedUsedUser = parseJson(coupon.usedUser);
         const usedUser: string[] = Array.isArray(parsedUsedUser)
           ? parsedUsedUser
@@ -1608,7 +1544,7 @@ app.put(
           content?: string;
           nolimit?: boolean;
         }>(coupon.reward);
-        // 보상 정의가 깨져 있으면 캐치되지 않는 예외 대신 명확한 오류로 끝냅니다.
+        // 보상 정의가 깨져 있으면 명확한 오류로 끝냅니다.
         if (!reward || typeof reward !== "object") {
           throw new CouponError("Invalid code", "Invalid code sent.");
         }
@@ -1722,12 +1658,7 @@ app.get("/ranking/:sort/:limit", async (req, res) => {
   res.status(200).json({ result: "success", results });
 });
 
-/**
- * 세션을 저장소에서 지우고 쿠키도 회수합니다.
- *
- * 이전에는 세션 필드만 delete하고 저장했기 때문에, 인증 상태는 풀리더라도
- * 세션 레코드가 만료(14일)까지 Redis에 그대로 남고 브라우저의 쿠키도 남았습니다.
- */
+// 세션을 저장소에서 지우고 쿠키도 회수합니다.
 const destroySession = (
   req: express.Request,
   res: express.Response,
@@ -1746,7 +1677,7 @@ const destroySession = (
   });
 };
 
-// 권장 경로입니다. 상태를 바꾸므로 POST이며 csrfGuard의 보호를 받습니다.
+// 권장 경로입니다. POST라 csrfGuard의 보호를 받습니다.
 app.post("/auth/logout", (req, res) => {
   destroySession(req, res, () => {
     res.status(200).json(createSuccessResponse("success"));
@@ -1754,11 +1685,9 @@ app.post("/auth/logout", (req, res) => {
 });
 
 /**
- * 최상위 내비게이션으로 로그아웃하고 프론트엔드로 되돌아가는 경로입니다.
- * GET이라 csrfGuard가 적용되지 않으므로, 여기서는 출처를 직접 확인합니다.
- * 이 검사가 없으면 <img src="...auth/logout">만으로 남의 세션을 끊을 수
- * 있습니다(로그아웃 CSRF). 정상적인 이동은 항상 프론트엔드에서 시작되므로
- * Origin이나 Referer가 신뢰 목록과 일치합니다.
+ * 최상위 내비게이션으로 로그아웃하고 프론트엔드로 돌아가는 경로입니다.
+ * GET이라 csrfGuard가 적용되지 않으므로 출처를 직접 확인합니다. 이 검사가
+ * 없으면 <img src="...auth/logout">만으로 남의 세션을 끊을 수 있습니다.
  */
 app.get("/auth/logout", (req, res) => {
   if (!isAllowedOrigin(requestOrigin(req))) {
@@ -1777,7 +1706,7 @@ app.get("/auth/logout", (req, res) => {
 });
 
 app.get("/notice/:lang", async (req, res) => {
-  // 동적 컬럼명 조합에 사용되므로 lang을 화이트리스트로 제한합니다(식별자 주입 방지).
+  // 컬럼명 조합에 쓰이므로 화이트리스트로 제한합니다.
   if (!NOTICE_LANGS.has(req.params.lang)) {
     res
       .status(400)
@@ -1808,16 +1737,14 @@ app.get("/notice/:lang", async (req, res) => {
   res.status(200).json({ result: "success", data: results[0] });
 });
 
-// 정의되지 않은 경로에 대한 404 처리입니다.
 app.use((req, res) => {
   res
     .status(404)
     .json(createErrorResponse("failed", "Not Found", "Unknown endpoint."));
 });
 
-// 전역 에러 핸들러입니다. 라우트에서 전달된(또는 async 거부로 포워딩된) 오류를
-// 서버측에만 기록하고 클라이언트에는 일반화된 메시지를 반환합니다(스택/내부 정보 노출 방지).
-// Express는 4개 인자를 가진 미들웨어를 에러 핸들러로 인식하므로 next를 유지합니다.
+// 전역 에러 핸들러입니다. 스택 등 내부 정보를 노출하지 않습니다.
+// Express는 인자 4개인 미들웨어를 에러 핸들러로 인식하므로 next를 유지해야 합니다.
 app.use(
   (
     err: unknown,
@@ -1828,9 +1755,8 @@ app.use(
   ) => {
     signale.error(err);
     if (res.headersSent) return;
-    // body-parser 등이 붙이는 클라이언트 오류 상태(잘못된 JSON 본문 -> 400,
-    // 본문 크기 초과 -> 413)를 존중합니다. 전부 500으로 뭉개면 호출자가 자기
-    // 요청이 잘못된 것인지 서버가 고장난 것인지 구분할 수 없습니다.
+    // body-parser가 붙이는 4xx(깨진 JSON 400, 크기 초과 413)를 그대로 씁니다.
+    // 전부 500으로 뭉개면 요청 잘못인지 서버 고장인지 구분할 수 없습니다.
     const status = (err as { status?: number; statusCode?: number } | null)?.status
       ?? (err as { statusCode?: number } | null)?.statusCode;
     const isClientError =
@@ -1853,34 +1779,20 @@ app.use(
   },
 );
 
-/**
- * 서버를 기동합니다.
- *
- * Redis 연결을 listen() 콜백 안에서 시작하면, 연결이 맺어지기 전에 들어온
- * 요청이 세션 저장소 오류로 500이 되거나 캐시 없이 DB를 직접 때립니다.
- * 연결을 먼저 맺고 나서 포트를 엽니다.
- */
-// Redis 연결을 기다리는 상한입니다. node-redis는 연결이 안 되면 백오프를 두고
-// 무한히 재시도하므로, 그대로 await하면 Redis가 죽어 있는 동안 포트가 아예
-// 열리지 않습니다. 상한을 넘기면 기동을 계속하고, 재연결은 배경에서 이어집니다.
+// Redis 연결을 기다리는 상한입니다. node-redis는 무한히 재시도하므로 그대로
+// await하면 Redis가 죽어 있는 동안 포트가 아예 열리지 않습니다.
 const REDIS_CONNECT_TIMEOUT_MS = 5000;
 
-/**
- * Redis 연결을 닫습니다.
- *
- * 한 번도 연결되지 못한 클라이언트에 quit()을 걸면 프로미스가 정착하지 않아
- * 종료 절차가 그 자리에서 멈춥니다. 상한을 두고, 그래도 소켓이 남아 있으면
- * 강제로 끊습니다.
- */
+// Redis 연결을 닫습니다.
 const closeRedis = async () => {
   try {
-    // isReady일 때만 quit()으로 정상 종료를 시도합니다. 재연결 중인 클라이언트는
-    // isOpen이 true여도 명령을 처리할 수 없어 quit()이 정착하지 않습니다.
+    // 재연결 중인 클라이언트는 isOpen이 true여도 quit()이 정착하지 않으므로
+    // isReady일 때만 시도합니다.
     if (redisClient.isReady) {
       await Promise.race([
         redisClient.quit(),
-        // 여기서는 unref()를 쓰지 않습니다. 남은 핸들이 모두 unref면 타이머가
-        // 발화하기 전에 프로세스가 그냥 빠져나가 종료 절차가 중간에 끊깁니다.
+        // unref()를 쓰면 안 됩니다. 남은 핸들이 모두 unref면 타이머가 발화하기
+        // 전에 프로세스가 빠져나가 종료 절차가 중간에 끊깁니다.
         new Promise<void>((resolve) => setTimeout(resolve, 2000)),
       ]);
     }
@@ -1896,7 +1808,7 @@ const closeRedis = async () => {
 
 const start = async () => {
   const connecting = redisClient.connect().catch((err) => {
-    // Redis가 없어도 캐시/rate limit은 DB 폴백으로 동작하므로 기동은 계속합니다.
+    // Redis가 없어도 DB 폴백으로 동작하므로 기동은 계속합니다.
     signale.error("Failed to connect to redis on startup.");
     signale.error(err);
   });
@@ -1912,7 +1824,7 @@ const start = async () => {
     );
   }
 
-  // 기동 직후 rating 인덱스를 준비해 첫 프로필 조회부터 ZSET을 쓰도록 합니다.
+  // 첫 프로필 조회부터 ZSET을 쓰도록 미리 준비합니다.
   rebuildRatingIndexIfNeeded().catch((err) => signale.error(err));
 
   const server = app.listen(config.project.port, () => {
@@ -1920,20 +1832,17 @@ const start = async () => {
     signale.success(`API Server running at port ${config.project.port}.`);
   });
 
-  /**
-   * 배포·재시작 시 진행 중인 요청을 끝까지 처리하고 자원을 정리합니다.
-   * 정리 없이 종료하면 처리 중이던 요청이 끊기고, 커밋되지 않은 트랜잭션이
-   * DB 쪽 타임아웃까지 잠금을 붙든 채 남습니다.
-   */
+  // 배포·재시작 시 진행 중인 요청을 끝내고 자원을 정리합니다. 정리 없이
+  // 종료하면 커밋되지 않은 트랜잭션이 DB 타임아웃까지 잠금을 붙듭니다.
   let shuttingDown = false;
   const shutdown = async (signal: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
     signale.pending(`Received ${signal}, shutting down...`);
 
-    // 새 연결을 받지 않고 진행 중인 요청이 끝나기를 기다립니다.
+    // 새 연결을 막고 진행 중인 요청을 기다립니다.
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    // 예약된 작업이 종료 중에 새 쿼리를 시작하지 않도록 멈춥니다.
+    // 종료 중에 예약 작업이 새 쿼리를 시작하지 않도록 멈춥니다.
     await schedule.gracefulShutdown().catch((err) => signale.error(err));
     await knex.destroy().catch((err) => signale.error(err));
     await closeRedis();
@@ -1942,7 +1851,7 @@ const start = async () => {
     process.exit(0);
   };
 
-  // 기다려도 끝나지 않으면 강제로 종료합니다(pm2의 kill_timeout보다 짧게).
+  // 끝나지 않으면 강제 종료합니다. pm2의 kill_timeout보다 짧아야 합니다.
   const SHUTDOWN_TIMEOUT_MS = 10000;
   for (const signal of ["SIGTERM", "SIGINT"]) {
     process.on(signal, () => {
