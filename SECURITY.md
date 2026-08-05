@@ -99,7 +99,13 @@ Redis 클라이언트는 `disableOfflineQueue`로 동작합니다. 연결이 끊
 
 기동 시 Redis 연결은 최대 5초만 기다리고, 실패해도 포트는 엽니다.
 `SIGTERM`/`SIGINT`에서는 진행 중인 요청을 처리한 뒤 DB·Redis 연결을 정리합니다
-(최대 10초, 초과 시 강제 종료). pm2의 `kill_timeout`은 이보다 길어야 합니다.
+(최대 10초, 초과 시 강제 종료). pm2의 `kill_timeout`은 이보다 길어야 합니다
+(현재 15초).
+
+배포는 rsync로 파일을 복사한 뒤 `pm2 startOrReload`로 명시적으로 재시작합니다
+(`.github/workflows/deploy.yml`). pm2의 `watch`는 켜지 않습니다. watch에
+재시작을 맡기면 복사가 끝나기 전에 재시작이 걸려 반쯤 복사된 트리로 기동할 수
+있기 때문입니다.
 
 ## 7. 다중 인스턴스
 
