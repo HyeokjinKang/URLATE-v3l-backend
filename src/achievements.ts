@@ -2,18 +2,12 @@ import fetch from "node-fetch";
 import signale from "signale";
 
 import config from "./config";
+import { knex } from "./db";
 import { getOrSet, invalidate, keys } from "./cache";
+import { parseJson } from "./validate";
 
-const knex = require("knex")({
-  client: "mysql2",
-  connection: {
-    host: config.database.host,
-    user: config.database.user,
-    password: config.database.password,
-    database: config.database.db,
-  },
-  pool: { min: 0, max: 7 },
-});
+// 실시간 알림이므로 짧게 잡습니다.
+const GAME_SERVER_TIMEOUT_MS = 3000;
 
 interface Data {
   [key: string]: string | number | boolean | undefined;
@@ -100,12 +94,8 @@ const achievedIndex = async (context: string, data?: Data) => {
   return index;
 };
 
-export const observer = async (
-  userid: string,
-  context: string,
-  data?: Data,
-) => {
-  // 필요한 컬럼만 읽습니다(기존에는 users 행 전체를 SELECT 했습니다).
+// 업적 처리 본체입니다. 예외는 아래 observer가 흡수합니다.
+const runObserver = async (userid: string, context: string, data?: Data) => {
   const userData = await knex("users")
     .select("achievements", "ownedAlias", "banner", "alias")
     .where("userid", userid);
@@ -113,7 +103,9 @@ export const observer = async (
     signale.debug(`Achievement observer got unknown userid ${userid}.`);
     return;
   }
-  const achievements = new Set(JSON.parse(userData[0].achievements));
+  const achievements = new Set(
+    parseJson<number[]>(userData[0].achievements) ?? [],
+  );
 
   // Get achievement index array from data. It will be [] if there is no achievement.
   const index: number[] = await achievedIndex(context, data);
@@ -131,9 +123,9 @@ export const observer = async (
     newAchievements = filteredIndex;
   }
 
-  // Return early only if there's nothing to process at all
-  // For RANK context, continue even if newAchievements is empty (to update aliases)
-  if (!filteredIndex.length) return;
+  // RANK는 순위에서 밀려났을 때 칭호를 회수해야 하므로, 달성 목록이 비어도
+  // 아래 alias 재조정까지 진행합니다.
+  if (context !== "RANK" && !filteredIndex.length) return;
 
   const achievementsList: Array<Achievement> = [];
   for (const i of newAchievements) {
@@ -144,7 +136,6 @@ export const observer = async (
       .catch((err: Error) => signale.error(err));
     achievements.add(i);
     // TODO: Find more elegant way to get i18n-ed data
-    // 업적 메타데이터는 사실상 불변이므로 캐싱해 기록 제출 경로의 조회를 줄입니다.
     const achievement = await getOrSet<Achievement[]>(
       "achievements",
       keys.achievement(i),
@@ -157,8 +148,8 @@ export const observer = async (
   }
 
   // Reward
-  const ownedAlias = new Set(JSON.parse(userData[0].ownedAlias));
-  const banner = new Set(JSON.parse(userData[0].banner));
+  const ownedAlias = new Set(parseJson<number[]>(userData[0].ownedAlias) ?? []);
+  const banner = new Set(parseJson<string[]>(userData[0].banner) ?? []);
   let selectedAlias = userData[0].alias;
   if (context === "RANK") {
     // Rank 관련 alias는 8~11번입니다.
@@ -171,37 +162,56 @@ export const observer = async (
     else if (index.includes(idDB.TOP_50)) ownedAlias.add(9);
     else if (index.includes(idDB.TOP_100)) ownedAlias.add(8);
     if (!ownedAlias.has(selectedAlias)) {
-      selectedAlias = Array.from(ownedAlias).pop();
+      // 비어 있으면 pop()이 undefined를 돌려주고 knex가 "Undefined binding"으로
+      // 실패합니다. 기본 칭호(0)로 되돌립니다.
+      selectedAlias = Array.from(ownedAlias).pop() ?? 0;
     }
   }
   for (const achievement of achievementsList) {
-    const rewards = JSON.parse(achievement.rewards);
+    const rewards = parseJson<[string, string | number][]>(achievement.rewards);
+    if (!Array.isArray(rewards)) continue;
     for (const reward of rewards) {
       if (reward[0] === "alias" && context !== "RANK") {
-        ownedAlias.add(reward[1]);
+        const aliasId = Number(reward[1]);
+        if (Number.isInteger(aliasId)) ownedAlias.add(aliasId);
       } else if (reward[0] === "reward") {
         //not yet
       } else if (reward[0] === "banner") {
-        banner.add(reward[1]);
+        if (typeof reward[1] === "string") banner.add(reward[1]);
       }
     }
   }
 
   // Update user data
-  await knex("users")
-    .update({
-      achievements: JSON.stringify(Array.from(achievements)),
-      ownedAlias: JSON.stringify(Array.from(ownedAlias)),
-      banner: JSON.stringify(Array.from(banner)),
-      alias: selectedAlias,
-    })
-    .where("userid", userid)
-    .catch((err: Error) => {
-      signale.error(err);
-    });
+  const updated = {
+    achievements: JSON.stringify(Array.from(achievements)),
+    ownedAlias: JSON.stringify(Array.from(ownedAlias)),
+    banner: JSON.stringify(Array.from(banner)),
+    alias: selectedAlias,
+  };
 
-  // 칭호·배너가 바뀌었으므로 프로필 캐시를 비웁니다.
-  await invalidate(keys.profile(userid), keys.user(userid));
+  // 일일 랭크 잡이 전체 사용자에 대해 호출하므로, 변화가 없으면 쓰기와
+  // 캐시 무효화를 건너뜁니다.
+  const unchanged =
+    updated.achievements ===
+      JSON.stringify(parseJson<number[]>(userData[0].achievements) ?? []) &&
+    updated.ownedAlias ===
+      JSON.stringify(parseJson<number[]>(userData[0].ownedAlias) ?? []) &&
+    updated.banner ===
+      JSON.stringify(parseJson<string[]>(userData[0].banner) ?? []) &&
+    updated.alias === userData[0].alias;
+  if (unchanged && !achievementsList.length) return;
+
+  if (!unchanged) {
+    await knex("users")
+      .update(updated)
+      .where("userid", userid)
+      .catch((err: Error) => {
+        signale.error(err);
+      });
+
+    await invalidate(keys.profile(userid), keys.user(userid));
+  }
 
   // Send achievement data to game server only if there are new achievements
   if (achievementsList.length > 0) {
@@ -215,8 +225,29 @@ export const observer = async (
         secret: config.project.secretKey,
         achievement: achievementsList,
       }),
+      // node-fetch는 기본 타임아웃이 없어, 게임 서버가 응답하지 않으면
+      // 프로미스가 열린 채 소켓을 점유합니다.
+      signal: AbortSignal.timeout(GAME_SERVER_TIMEOUT_MS),
     }).catch((err) => {
       signale.error(err);
     });
+  }
+};
+
+/**
+ * 업적 처리를 호출합니다. 거부된 프로미스를 밖으로 내보내지 않으므로 호출부에서
+ * await나 .catch 없이 불러도 안전합니다. 요청 흐름 밖에서 호출되는 함수라
+ * 예외가 새어 나가면 unhandledRejection으로 프로세스가 종료됩니다.
+ */
+export const observer = async (
+  userid: string,
+  context: string,
+  data?: Data,
+): Promise<void> => {
+  try {
+    await runObserver(userid, context, data);
+  } catch (err) {
+    signale.error(`Achievement observer failed for ${userid} (${context}).`);
+    signale.error(err);
   }
 };

@@ -3,7 +3,7 @@ import signale from "signale";
 
 import config from "./config";
 
-// 세션 저장소·rate limiter·캐시가 하나의 커넥션을 공유합니다.
+// 세션 저장소·rate limiter·캐시가 이 커넥션 하나를 공유합니다.
 export const redisClient = createClient({
   socket: {
     host: config.redis.host,
@@ -11,6 +11,9 @@ export const redisClient = createClient({
   },
   username: config.redis.username,
   password: config.redis.password,
+  // 필수: 기본값(오프라인 큐)에서는 연결이 끊겨도 명령이 예외를 던지지 않고
+  // 복구될 때까지 대기해, 각 계층의 DB 폴백이 동작하지 않고 요청이 매달립니다.
+  disableOfflineQueue: true,
 });
 
 redisClient.on("connect", () => {
@@ -21,6 +24,4 @@ redisClient.on("error", (err) => {
   signale.error(err);
 });
 
-// Redis가 끊겨 있을 때 명령을 보내면 예외가 발생하므로,
-// 캐시 계층은 항상 이 값을 먼저 확인하고 DB로 폴백합니다.
 export const isRedisReady = (): boolean => redisClient.isReady;
