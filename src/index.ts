@@ -146,7 +146,9 @@ const csrfGuard = (
     next();
     return;
   }
-  signale.warn(`Blocked cross-origin ${req.method} ${req.path} from ${origin}.`);
+  signale.warn(
+    `Blocked cross-origin ${req.method} ${req.path} from ${origin}.`,
+  );
   forbiddenOrigin(res);
 };
 
@@ -453,37 +455,69 @@ app.post("/auth/join", async (req, res) => {
     return;
   }
 
+  const registered = await knex("users")
+    .select("userid")
+    .where("userid", req.session.userid)
+    .first();
+  if (registered) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Already Registered",
+          "You are already registered.",
+        ),
+      );
+    return;
+  }
+
   const results = await knex("users")
     .select("nickname")
     .where("nickname", req.body.displayName);
   if (!results[0]) {
-    await knex("users").insert({
-      nickname: req.body.displayName,
-      userid: req.session.userid,
-      date: new Date(),
-      email: req.session.email,
-      settings: JSON.stringify(defaultSettings()),
-      skins: '["Default"]',
-      tutorial: 3,
-      picture: req.session.picture,
-      background: `${config.project.cdn}/albums/75/urlate.webp`,
-      alias: 0,
-      rating: 0,
-      rankHistory: "[]",
-      banner: "[]",
-      recentPlay: "[]",
-      scoreSum: "0",
-      accuracy: "0",
-      playtime: 0,
-      // 1stNum은 더 이상 읽지 않습니다(countFirstPlaces가 계산). 컬럼 제약 때문에 값만 채웁니다.
-      "1stNum": 0,
-      ap: 0,
-      fc: 0,
-      clear: 0,
-      ownedAlias: "[]",
-      achievements: "[]",
-      explicit: 0,
-    });
+    try {
+      await knex("users").insert({
+        nickname: req.body.displayName,
+        userid: req.session.userid,
+        date: new Date(),
+        email: req.session.email,
+        settings: JSON.stringify(defaultSettings()),
+        skins: '["Default"]',
+        tutorial: 3,
+        picture: req.session.picture,
+        background: `${config.project.cdn}/albums/75/urlate.webp`,
+        alias: 0,
+        rating: 0,
+        rankHistory: "[]",
+        banner: "[]",
+        recentPlay: "[]",
+        scoreSum: "0",
+        accuracy: "0",
+        playtime: 0,
+        "1stNum": 0,
+        ap: 0,
+        fc: 0,
+        clear: 0,
+        ownedAlias: "[]",
+        achievements: "[]",
+        explicit: 0,
+      });
+    } catch (err) {
+      if ((err as { code?: string }).code === "ER_DUP_ENTRY") {
+        res
+          .status(400)
+          .json(
+            createErrorResponse(
+              "failed",
+              "Duplicated",
+              "Already registered, or the name sent already exists.",
+            ),
+          );
+        return;
+      }
+      throw err;
+    }
     // 가입 즉시 로그인 상태로 보이도록 비웁니다.
     await invalidate(keys.authStatus(req.session.userid));
     await setRating(req.session.userid, 0);
@@ -894,7 +928,6 @@ app.put("/profile/:element", async (req, res) => {
           .where("userid", userid);
         break;
       case "picture":
-
         explicit = req.body.explicit ? explicit | 1 : explicit & ~1;
         await knex("users")
           .update({ picture: req.body.value, explicit })
@@ -1757,8 +1790,9 @@ app.use(
     if (res.headersSent) return;
     // body-parser가 붙이는 4xx(깨진 JSON 400, 크기 초과 413)를 그대로 씁니다.
     // 전부 500으로 뭉개면 요청 잘못인지 서버 고장인지 구분할 수 없습니다.
-    const status = (err as { status?: number; statusCode?: number } | null)?.status
-      ?? (err as { statusCode?: number } | null)?.statusCode;
+    const status =
+      (err as { status?: number; statusCode?: number } | null)?.status ??
+      (err as { statusCode?: number } | null)?.statusCode;
     const isClientError =
       typeof status === "number" && status >= 400 && status < 500;
     res
