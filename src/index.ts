@@ -1,7 +1,5 @@
 import cookieParser from "cookie-parser";
 import express from "express";
-import session from "express-session";
-import { RedisStore } from "connect-redis";
 import signale from "signale";
 import schedule from "node-schedule";
 import { OAuth2Client } from "google-auth-library";
@@ -16,7 +14,18 @@ import config from "./config";
 import { knex } from "./db";
 import { acquireDailyJobLock } from "./job-lock";
 import { isValidSecret } from "./secret";
-import { isRedisReady, redisClient } from "./redis";
+import { redisClient } from "./redis";
+import { isProduction, sessionMiddleware } from "./middleware/session";
+import {
+  csrfGuard,
+  forbiddenOrigin,
+  isAllowedOrigin,
+  requestOrigin,
+} from "./middleware/csrf";
+import { requireLogin } from "./middleware/require-login";
+import { rateLimit } from "./middleware/rate-limit";
+import { ensureBody, securityHeaders } from "./middleware/headers";
+import { errorHandler, notFoundHandler } from "./middleware/errors";
 import { countFirstPlaces, submitRecord } from "./record";
 import { cleanupReplayLogs, writeReplayLog } from "./replay-log";
 import {
@@ -63,164 +72,10 @@ app.locals.pretty = true;
 // 버전 노출을 막습니다.
 app.disable("x-powered-by");
 
-const redisStore = new RedisStore({
-  client: redisClient,
-  prefix: "urlate:",
-});
-
-// 로컬 HTTP 개발용으로 test 모드에서만 secure 쿠키를 해제합니다.
-const isProduction = config.project.mode !== "test";
-
 // HTTPS를 종단하는 프록시 뒤이므로 X-Forwarded-Proto를 신뢰해야 secure 쿠키가 동작합니다.
 app.set("trust proxy", 1);
 
-const sessionMiddleware = session({
-  store: redisStore,
-  resave: config.session.resave ?? false,
-  saveUninitialized: config.session.saveUninitialized ?? false,
-  secret: config.session.secret,
-  name: "urlate",
-  cookie: {
-    domain: config.session.domain,
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: "lax",
-    maxAge: 1000 * 60 * 60 * 24 * 14, // 14일
-  },
-});
-
-/**
- * CSRF 방어입니다. SameSite=lax는 상위 도메인을 공유하는 사이트끼리 쿠키를
- * 그대로 보내므로, Origin(없으면 Referer)을 신뢰 목록과 대조하는 계층을 더 둡니다.
- *
- * 둘 다 없는 요청은 통과시킵니다. 브라우저는 상태 변경 요청에 Origin을 반드시
- * 붙이므로 이 경우는 서버 간 호출이며, 그 경로는 project secret으로 인증합니다.
- */
-const CSRF_SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
-
-const ALLOWED_ORIGINS = new Set(
-  [config.project.url, config.project.api].filter(
-    (value): value is string => typeof value === "string" && value.length > 0,
-  ),
-);
-
-const toOrigin = (value?: string): string | null => {
-  if (!value) return null;
-  try {
-    return new URL(value).origin;
-  } catch {
-    return null;
-  }
-};
-
-// 브라우저가 아니면 null입니다.
-const requestOrigin = (req: express.Request): string | null =>
-  toOrigin(req.get("origin")) ?? toOrigin(req.get("referer"));
-
-const isAllowedOrigin = (origin: string | null): boolean =>
-  origin !== null && ALLOWED_ORIGINS.has(origin);
-
-const forbiddenOrigin = (res: express.Response) => {
-  res
-    .status(403)
-    .json(
-      createErrorResponse(
-        "failed",
-        "Forbidden Origin",
-        "Request origin is not allowed.",
-      ),
-    );
-};
-
-const csrfGuard = (
-  req: express.Request,
-  res: express.Response,
-  next: express.NextFunction,
-) => {
-  if (CSRF_SAFE_METHODS.has(req.method)) {
-    next();
-    return;
-  }
-  const origin = requestOrigin(req);
-  if (origin === null || ALLOWED_ORIGINS.has(origin)) {
-    next();
-    return;
-  }
-  signale.warn(
-    `Blocked cross-origin ${req.method} ${req.path} from ${origin}.`,
-  );
-  forbiddenOrigin(res);
-};
-
-// 로그인이 필요한 라우트에 붙입니다.
-// 응답 본문은 바꾸지 마세요. 클라이언트가 result/error 필드로 분기합니다.
-const requireLogin = (
-  req: express.Request,
-  res: express.Response,
-  next: express.NextFunction,
-) => {
-  if (!req.session.userid) {
-    res
-      .status(400)
-      .json(
-        createErrorResponse(
-          "failed",
-          "UserID Required",
-          "UserID is required for this task.",
-        ),
-      );
-    return;
-  }
-  next();
-};
-
-// Redis 기반이라 인스턴스를 늘려도 카운터가 공유됩니다.
-const rateLimit =
-  (options: { windowSec: number; max: number; prefix: string }) =>
-  async (
-    req: express.Request,
-    res: express.Response,
-    next: express.NextFunction,
-  ) => {
-    // 끊겨 있으면 명령마다 예외가 나므로 먼저 확인합니다.
-    if (!isRedisReady()) {
-      next();
-      return;
-    }
-    try {
-      const ip = req.ip || req.socket.remoteAddress || "unknown";
-      const key = `ratelimit:${options.prefix}:${ip}`;
-      const count = await redisClient.incr(key);
-      if (count === 1) {
-        await redisClient.expire(key, options.windowSec);
-      }
-      if (count > options.max) {
-        res
-          .status(429)
-          .json(
-            createErrorResponse(
-              "failed",
-              "Too Many Requests",
-              "Rate limit exceeded. Please try again later.",
-            ),
-          );
-        return;
-      }
-    } catch (err) {
-      // Redis 장애 시 요청을 막지 않고 통과시킵니다(가용성 우선).
-      signale.error(err);
-    }
-    next();
-  };
-
-// CORS 헤더는 프록시가 담당합니다. 여기서도 넣으면 중복되어 브라우저가 차단합니다.
-app.use((req, res, next) => {
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  // 본인 데이터(/user 등)가 공유 캐시에 남지 않도록 합니다.
-  res.setHeader("Cache-Control", "no-store");
-  next();
-});
+app.use(securityHeaders);
 
 // 차단될 요청이 세션 조회와 본문 파싱 비용을 치르지 않도록 앞에 둡니다.
 app.use(rateLimit({ windowSec: 60, max: 600, prefix: "global" }));
@@ -231,13 +86,7 @@ app.use(express.json({ limit: "512kb" }));
 app.use(express.urlencoded({ extended: true, limit: "64kb" }));
 app.use(cookieParser());
 
-// Express 5는 본문 파서가 처리하지 못한 요청의 req.body를 undefined로 둡니다
-// (Express 4는 {}). 라우트가 req.body.x를 곧바로 읽으므로 Content-Type 하나만
-// 어긋나도 400이어야 할 응답이 TypeError로 500이 됩니다.
-app.use((req, res, next) => {
-  if (req.body === undefined) req.body = {};
-  next();
-});
+app.use(ensureBody);
 
 app.use(csrfGuard);
 
@@ -1770,48 +1619,9 @@ app.get("/notice/:lang", async (req, res) => {
   res.status(200).json({ result: "success", data: results[0] });
 });
 
-app.use((req, res) => {
-  res
-    .status(404)
-    .json(createErrorResponse("failed", "Not Found", "Unknown endpoint."));
-});
+app.use(notFoundHandler);
 
-// 전역 에러 핸들러입니다. 스택 등 내부 정보를 노출하지 않습니다.
-// Express는 인자 4개인 미들웨어를 에러 핸들러로 인식하므로 next를 유지해야 합니다.
-app.use(
-  (
-    err: unknown,
-    req: express.Request,
-    res: express.Response,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    next: express.NextFunction,
-  ) => {
-    signale.error(err);
-    if (res.headersSent) return;
-    // body-parser가 붙이는 4xx(깨진 JSON 400, 크기 초과 413)를 그대로 씁니다.
-    // 전부 500으로 뭉개면 요청 잘못인지 서버 고장인지 구분할 수 없습니다.
-    const status =
-      (err as { status?: number; statusCode?: number } | null)?.status ??
-      (err as { statusCode?: number } | null)?.statusCode;
-    const isClientError =
-      typeof status === "number" && status >= 400 && status < 500;
-    res
-      .status(isClientError ? status : 500)
-      .json(
-        isClientError
-          ? createErrorResponse(
-              "failed",
-              "Bad Request",
-              "Request could not be processed.",
-            )
-          : createErrorResponse(
-              "failed",
-              "Internal Server Error",
-              "An unexpected error occurred.",
-            ),
-      );
-  },
-);
+app.use(errorHandler);
 
 // Redis 연결을 기다리는 상한입니다. node-redis는 무한히 재시도하므로 그대로
 // await하면 Redis가 죽어 있는 동안 포트가 아예 열리지 않습니다.
