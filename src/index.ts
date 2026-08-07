@@ -12,9 +12,16 @@ import {
 import { observer } from "./achievements";
 import config from "./config";
 import { knex } from "./db";
-import { acquireDailyJobLock } from "./job-lock";
 import { isValidSecret } from "./secret";
 import { redisClient } from "./redis";
+import { scheduleJobs } from "./jobs";
+import { rebuildRatingIndexIfNeeded } from "./services/rating-bootstrap";
+import {
+  getAllTracks,
+  nicknameExists,
+  trackExists,
+} from "./services/tracks";
+import { notFound } from "./respond";
 import { isProduction, sessionMiddleware } from "./middleware/session";
 import {
   csrfGuard,
@@ -27,7 +34,7 @@ import { rateLimit } from "./middleware/rate-limit";
 import { ensureBody, securityHeaders } from "./middleware/headers";
 import { errorHandler, notFoundHandler } from "./middleware/errors";
 import { countFirstPlaces, submitRecord } from "./record";
-import { cleanupReplayLogs, writeReplayLog } from "./replay-log";
+import { writeReplayLog } from "./replay-log";
 import {
   isValidFileName,
   isValidNickname,
@@ -41,13 +48,7 @@ import {
   TRACK_ORDER_COLUMNS,
 } from "./validate";
 import { getOrSet, invalidate, keys } from "./cache";
-import {
-  acquireRebuildLock,
-  countHigherRating,
-  rebuild as rebuildRatingIndex,
-  releaseRebuildLock,
-  setRating,
-} from "./rating-index";
+import { countHigherRating, setRating } from "./rating-index";
 
 import { defaultSettings, normalizeSettings } from "./settings";
 
@@ -97,84 +98,6 @@ const gidVerify = async (token: string, clientId: string) => {
   });
   return ticket.getPayload();
 };
-
-// 최초 기동·Redis 재시작 이후 rating 인덱스를 복구합니다.
-// 성공해도 락을 만료까지 두어, 인덱스가 빈 동안 users 전체 조회가 연달아
-// 발생하지 않게 합니다.
-const rebuildRatingIndexIfNeeded = async () => {
-  if (!(await acquireRebuildLock())) return;
-  try {
-    const users = await knex("users").select("userid", "rating");
-    await rebuildRatingIndex(users);
-  } catch (err) {
-    signale.error(err);
-    // 실패하면 곧바로 재시도할 수 있도록 락을 풉니다.
-    await releaseRebuildLock();
-  }
-};
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const updateRankHistory = schedule.scheduleJob("59 23 * * *", async () => {
-  // 스케줄 콜백의 예외는 잡아 줄 호출자가 없어 unhandledRejection이 됩니다.
-  try {
-    // 인스턴스 간 중복 기록을 막습니다.
-    if (!(await acquireDailyJobLock("rank-history"))) return;
-    signale.info(new Date());
-    signale.pending(`Updating rank history...`);
-    const users = await knex("users")
-      .select("userid", "rankHistory", "rating")
-      .orderBy("rating", "desc");
-    // 증분 갱신에서 생길 수 있는 누락을 하루 한 번 바로잡습니다.
-    await rebuildRatingIndex(users);
-    for (let i = 0; i < users.length; i++) {
-      // 한 사용자의 손상된 값 때문에 작업 전체가 멈추지 않게 합니다.
-      const previous = parseJson(users[i].rankHistory);
-      const history = [...(Array.isArray(previous) ? previous : []), i + 1];
-      await knex("users")
-        .update({ rankHistory: JSON.stringify(history.slice(-19)) })
-        .where("userid", users[i].userid);
-      let rank100 = false,
-        rank50 = false,
-        rank10 = false,
-        rank1 = false;
-      if (i < 100) {
-        rank100 = true;
-        if (i < 50) {
-          rank50 = true;
-          if (i < 10) {
-            rank10 = true;
-            if (i < 1) {
-              rank1 = true;
-            }
-          }
-        }
-      }
-      // 순차 처리로 유저 수만큼의 쿼리가 풀(max 7)에 몰리는 것을 막습니다.
-      await observer(`${users[i].userid}`, "RANK", {
-        rank100,
-        rank50,
-        rank10,
-        rank1,
-      });
-    }
-    signale.info(new Date());
-    signale.success(`Rank history updated.`);
-  } catch (err) {
-    signale.error(`Failed to update rank history.`);
-    signale.error(err);
-  }
-});
-
-// 보관 기간이 지난 리플레이 로그를 매일 정리합니다.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const cleanupLogs = schedule.scheduleJob("30 4 * * *", async () => {
-  try {
-    if (!(await acquireDailyJobLock("replay-log-cleanup"))) return;
-    await cleanupReplayLogs();
-  } catch (err) {
-    signale.error(err);
-  }
-});
 
 app.get("/auth/status", async (req, res) => {
   const userid = req.session.userid;
@@ -502,55 +425,6 @@ app.get("/profilePic/:username", async (req, res) => {
 
   res.status(200).json({ result: "success", picture: results[0].picture });
 });
-
-const TRACK_COLUMNS = [
-  "name",
-  "fileName",
-  "producer",
-  "bpm",
-  "difficulty",
-  "originalName",
-];
-
-const getAllTracks = () =>
-  getOrSet(
-    "tracks",
-    keys.tracksAll(),
-    () => knex("tracks").select(TRACK_COLUMNS),
-    {
-      cacheEmpty: false,
-    },
-  );
-
-/**
- * 캐시 계층에 닿기 전에 대상의 실재 여부를 확인합니다. 캐시 키는 요청 파라미터를
- * 그대로 쓰고 빈 결과도 저장하므로, 없는 값을 반복 조회하는 것만으로 Redis에
- * 쓰레기 키가 무한히 쌓입니다. 닉네임 형식이 허용하는 조합이 사실상 무한해
- * 형식 검증만으로는 부족합니다.
- *
- * 두 검사 모두 기존 캐시 키를 재사용하므로 정상 요청에는 추가 조회가 없습니다.
- */
-const trackExists = async (fileName: string): Promise<boolean> => {
-  const tracks = await getAllTracks();
-  return tracks.some((track) => track.fileName === fileName);
-};
-
-const nicknameExists = async (nickname: string): Promise<boolean> => {
-  const rows = await getOrSet(
-    "profilePic",
-    keys.profilePic(nickname),
-    () => knex("users").select("picture").where("nickname", nickname),
-    { cacheEmpty: false },
-  );
-  return rows.length > 0;
-};
-
-// 조회 대상이 없을 때 공통으로 쓰는 응답입니다.
-const notFound = (res: express.Response, description: string) => {
-  res
-    .status(400)
-    .json(createErrorResponse("failed", "Failed to Load", description));
-};
 
 app.get("/tracks", async (req, res) => {
   // 페이지 진입마다 호출되지만 곡이 추가될 때만 바뀝니다.
@@ -1670,6 +1544,8 @@ const start = async () => {
 
   // 첫 프로필 조회부터 ZSET을 쓰도록 미리 준비합니다.
   rebuildRatingIndexIfNeeded().catch((err) => signale.error(err));
+
+  scheduleJobs();
 
   const server = app.listen(config.project.port, () => {
     signale.info(new Date());
