@@ -71,6 +71,7 @@ export const keys = {
   notice: (lang: string) => `notice:${seg(lang)}`,
   teamProfile: (name: string) => `team:${seg(name)}`,
   profilePic: (nickname: string) => `pic:${seg(nickname)}`,
+  useridByNickname: (nickname: string) => `uidof:${seg(nickname)}`,
   user: (userid: string) => `user:${seg(userid)}`,
   authStatus: (userid: string) => `authstatus:${seg(userid)}`,
   profile: (userid: string) => `profile:${seg(userid)}`,

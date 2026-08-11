@@ -42,3 +42,18 @@ export const nicknameExists = async (nickname: string): Promise<boolean> => {
   );
   return rows.length > 0;
 };
+
+/**
+ * 닉네임을 내부 식별자로 바꿉니다. 공개 API는 닉네임을 받고 캐시는 userid를
+ * 기준으로 두기 위한 다리입니다. 닉네임을 바꾸는 경로가 없어 이 대응은 변하지
+ * 않으므로 길게 캐싱해도 안전합니다.
+ */
+export const useridOf = async (nickname: string): Promise<string | null> => {
+  const rows = await getOrSet(
+    "authStatus",
+    keys.useridByNickname(nickname),
+    () => knex("users").select("userid").where("nickname", nickname),
+    { cacheEmpty: false },
+  );
+  return rows.length ? String(rows[0].userid) : null;
+};

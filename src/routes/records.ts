@@ -10,7 +10,7 @@ import { requireLogin } from "../middleware/require-login";
 import { submitRecord } from "../record";
 import { writeReplayLog } from "../replay-log";
 import { notFound } from "../respond";
-import { nicknameExists, trackExists } from "../services/tracks";
+import { nicknameExists, trackExists, useridOf } from "../services/tracks";
 import {
   isValidFileName,
   isValidNickname,
@@ -306,9 +306,8 @@ router.get("/trackRecords/:nickname", async (req, res) => {
 });
 
 // recentPlay의 id마다 /record/:index를 호출하던 것을 요청 한 번으로 대체합니다.
-router.get("/recentPlays/:uid", async (req, res) => {
-  const uid = req.params.uid;
-  const results = await getOrSet("record", keys.recentPlays(uid), async () => {
+const loadRecentPlays = (uid: string) =>
+  getOrSet("record", keys.recentPlays(uid), async () => {
     const users = await knex("users").select("recentPlay").where("userid", uid);
     if (!users.length) return null;
     const parsed = parseJson(users[0].recentPlay);
@@ -338,6 +337,11 @@ router.get("/recentPlays/:uid", async (req, res) => {
       .map((index) => byIndex.get(index))
       .filter((row) => row !== undefined);
   });
+
+const respondRecentPlays = (
+  res: express.Response,
+  results: Awaited<ReturnType<typeof loadRecentPlays>>,
+) => {
   if (results === null) {
     res
       .status(400)
@@ -347,6 +351,31 @@ router.get("/recentPlays/:uid", async (req, res) => {
     return;
   }
   res.status(200).json({ result: "success", results });
+};
+
+// 공개 프로필은 닉네임으로 조회합니다(/profile/nickname/:nickname과 같은 이유).
+router.get("/recentPlays/nickname/:nickname", async (req, res) => {
+  const nickname = req.params.nickname;
+  if (!isValidNickname(nickname)) {
+    res
+      .status(400)
+      .json(createErrorResponse("failed", "Wrong Format", "Invalid nickname."));
+    return;
+  }
+  const uid = await useridOf(nickname);
+  if (!uid) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse("failed", "Failed to Load", "Cannot find user."),
+      );
+    return;
+  }
+  respondRecentPlays(res, await loadRecentPlays(uid));
+});
+
+router.get("/recentPlays/:uid", async (req, res) => {
+  respondRecentPlays(res, await loadRecentPlays(req.params.uid));
 });
 
 router.get("/record/:filename/:nickname", async (req, res) => {
