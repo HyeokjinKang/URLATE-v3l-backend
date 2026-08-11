@@ -18,6 +18,7 @@ import {
 import { rateLimit } from "../middleware/rate-limit";
 import { isProduction } from "../middleware/session";
 import { setRating } from "../rating-index";
+import { isReservedNickname } from "../reserved-names";
 import { defaultSettings } from "../settings";
 import { isValidNickname } from "../validate";
 
@@ -158,6 +159,20 @@ router.post("/auth/join", async (req, res) => {
       .status(400)
       .json(
         createErrorResponse("failed", "Wrong Format", "Wrong name format."),
+      );
+    return;
+  }
+
+  // 형식은 맞지만 선점을 막아야 하는 이름입니다.
+  if (isReservedNickname(displayName)) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Reserved Name",
+          "The name sent is reserved.",
+        ),
       );
     return;
   }
