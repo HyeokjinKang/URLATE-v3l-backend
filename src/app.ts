@@ -1,6 +1,7 @@
 import cookieParser from "cookie-parser";
 import express from "express";
 
+import config from "./config";
 import { csrfGuard } from "./middleware/csrf";
 import { errorHandler, notFoundHandler } from "./middleware/errors";
 import { ensureBody, securityHeaders } from "./middleware/headers";
@@ -20,8 +21,14 @@ app.locals.pretty = true;
 // 버전 노출을 막습니다.
 app.disable("x-powered-by");
 
-// HTTPS를 종단하는 프록시 뒤이므로 X-Forwarded-Proto를 신뢰해야 secure 쿠키가 동작합니다.
-app.set("trust proxy", 1);
+// 앞단 프록시가 HTTPS를 종단하므로 X-Forwarded-Proto를 신뢰해야 secure 쿠키가
+// 동작하고, 레이트리밋이 쓰는 req.ip도 X-Forwarded-For에서 나옵니다.
+//
+// 이 값은 실제 홉 수와 정확히 같아야 합니다. Express는 X-Forwarded-For의 뒤에서
+// 이 개수만큼을 건너뛴 주소를 req.ip로 씁니다. 프론트엔드는 CDN + 리버스 프록시
+// 2홉을 확인해 두었고(config.project.trustProxy), 여기서 1을 쓰면 req.ip가
+// CDN 주소로 고정되어 전 사용자가 하나의 레이트리밋 버킷을 공유합니다.
+app.set("trust proxy", config.project.trustProxy ?? 2);
 
 app.use(securityHeaders);
 
