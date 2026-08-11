@@ -17,8 +17,8 @@ import {
 } from "../middleware/csrf";
 import { rateLimit } from "../middleware/rate-limit";
 import { isProduction } from "../middleware/session";
+import { isBlockedNickname } from "../nickname-policy";
 import { setRating } from "../rating-index";
-import { isReservedNickname } from "../reserved-names";
 import { defaultSettings } from "../settings";
 import { isValidNickname } from "../validate";
 
@@ -163,17 +163,16 @@ router.post("/auth/join", async (req, res) => {
     return;
   }
 
-  // 형식은 맞지만 선점을 막아야 하는 이름입니다.
-  if (isReservedNickname(displayName)) {
-    res
-      .status(400)
-      .json(
-        createErrorResponse(
-          "failed",
-          "Reserved Name",
-          "The name sent is reserved.",
-        ),
-      );
+  // 형식은 맞지만 쓸 수 없는 이름입니다(예약어·욕설).
+  if (isBlockedNickname(displayName)) {
+    res.status(400).json(
+      createErrorResponse(
+        "failed",
+        // 어느 목록에 걸렸는지는 알리지 않습니다.
+        "Reserved Name",
+        "The name sent cannot be used.",
+      ),
+    );
     return;
   }
 
