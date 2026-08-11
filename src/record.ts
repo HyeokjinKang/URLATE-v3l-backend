@@ -63,6 +63,28 @@ export const submitRecord = async (submission: RecordSubmission) => {
 
   // read-modify-write 경쟁을 막기 위해 트랜잭션 + 행 잠금으로 처리합니다.
   await knex.transaction(async (trx) => {
+    // 이 사용자의 기록 저장을 직렬화하는 잠금입니다. 아래 trackRecords의
+    // read-modify-write(isBest·rating 이관)보다 반드시 먼저 잡아야 합니다.
+    // 뒤에서 잡으면 동시 제출 두 건이 같은 "이전 최고 기록"을 읽고 양쪽 모두
+    // isBest=1로 남아, 순위표와 1위 곡 수가 중복 집계됩니다.
+    const user = await trx("users")
+      .where("nickname", submission.nickname)
+      .select(
+        "userid",
+        "rating",
+        "scoreSum",
+        "accuracy",
+        "recentPlay",
+        "playtime",
+        "ap",
+        "fc",
+        "clear",
+      )
+      .forUpdate();
+    if (!user.length) {
+      throw new Error("User not found for record update.");
+    }
+
     // 난이도는 클라이언트 값 대신 tracks 테이블에서 도출합니다.
     let difficultyValue = submission.difficulty;
     const trackRow = await trx("tracks")
@@ -143,23 +165,6 @@ export const submitRecord = async (submission: RecordSubmission) => {
       accuracy: submission.accuracy,
       rating,
     });
-    const user = await trx("users")
-      .where("nickname", submission.nickname)
-      .select(
-        "userid",
-        "rating",
-        "scoreSum",
-        "accuracy",
-        "recentPlay",
-        "playtime",
-        "ap",
-        "fc",
-        "clear",
-      )
-      .forUpdate();
-    if (!user.length) {
-      throw new Error("User not found for record update.");
-    }
     let ap = 0,
       fc = 0,
       clear = 0;
