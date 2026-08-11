@@ -18,6 +18,7 @@
   },
   "author": "Team Croissant",
   "license": "AGPL-3.0-or-later",
+  "packageManager": "pnpm@11.21.0",
   "dependencies": {
     "connect-redis": "^9.0.0",
     "cookie-parser": "^1.4.7",
