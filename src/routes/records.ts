@@ -5,6 +5,7 @@ import { observer } from "../achievements";
 import { createSuccessResponse, createErrorResponse } from "../api-response";
 import { getOrSet, keys } from "../cache";
 import { knex } from "../db";
+import { rateLimit } from "../middleware/rate-limit";
 import { requireLogin } from "../middleware/require-login";
 import { submitRecord } from "../record";
 import { writeReplayLog } from "../replay-log";
@@ -24,7 +25,16 @@ import {
 
 export const router = express.Router();
 
-router.put("/playRecord", requireLogin, async (req, res) => {
+// 한 판이 아무리 짧아도 분당 수십 판은 나올 수 없습니다. 기록 제출은 DB 쓰기와
+// 리플레이 파일 생성을 동반하므로, 전역 한도(600/분)만으로는 로그인한 사용자
+// 한 명이 디스크와 DB를 밀어붙일 수 있습니다.
+const playRecordLimiter = rateLimit({
+  windowSec: 60,
+  max: 30,
+  prefix: "playrecord",
+});
+
+router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
   //doesn't scan the entire record yet
   //userid, username, rank, score, maxCombo, perfect, great, good, bad, miss, bullet, accuracy, record
 

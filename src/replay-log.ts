@@ -12,6 +12,10 @@ const DEFAULT_RETENTION_DAYS = 14;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+// 리플레이 한 건의 크기 상한입니다. 한 판의 판정 배열은 크기가 뻔하므로,
+// 상한이 없으면 본문 제한(512KB)까지 그대로 파일로 쌓여 디스크가 찹니다.
+const MAX_RECORD_CHARS = 64 * 1024;
+
 export const logsRoot = path.resolve(__dirname, "../logs");
 
 export const retentionDays = (): number => {
@@ -40,12 +44,20 @@ export const writeReplayLog = (
   if (retentionDays() === 0) return true;
   if (record === undefined || record === null) return true;
 
+  const serialized = JSON.stringify(record);
+  if (serialized === undefined || serialized.length > MAX_RECORD_CHARS) {
+    signale.warn(
+      `Skipped an oversized or unserializable replay from ${nickname}.`,
+    );
+    return true;
+  }
+
   const logDir = path.resolve(logsRoot, nickname, fileName);
   if (logDir !== logsRoot && !logDir.startsWith(logsRoot + path.sep)) {
     return false;
   }
   const logFile = path.join(logDir, `${Date.now()}.json`);
-  fs.outputJson(logFile, record).catch((err) => signale.error(err));
+  fs.outputFile(logFile, serialized).catch((err) => signale.error(err));
   return true;
 };
 
@@ -86,7 +98,8 @@ export const cleanupReplayLogs = async () => {
         }
       } catch (err) {
         // 파일 하나가 실패해도 나머지 정리는 계속합니다.
-        if ((err as NodeJS.ErrnoException).code !== "ENOENT") signale.error(err);
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT")
+          signale.error(err);
       }
     }
     return remaining;
