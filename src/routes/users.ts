@@ -10,8 +10,9 @@ import { countHigherRating } from "../rating-index";
 import { countFirstPlaces } from "../record";
 import { isValidSecret } from "../secret";
 import { rebuildRatingIndexIfNeeded } from "../services/rating-bootstrap";
+import { useridOf } from "../services/tracks";
 import { normalizeSettings } from "../settings";
-import { parseJson } from "../validate";
+import { isValidNickname, parseJson } from "../validate";
 
 export const router = express.Router();
 
@@ -52,33 +53,34 @@ router.get("/user", requireLogin, async (req, res) => {
   res.status(200).json({ result: "success", user: results[0] });
 });
 
-router.get("/profile/:uid", async (req, res) => {
-  const uid = req.params.uid;
-  const results = await getOrSet(
+const PROFILE_COLUMNS = [
+  "nickname",
+  "skins",
+  "picture",
+  "background",
+  "alias",
+  "rating",
+  "rankHistory",
+  "banner",
+  "recentPlay",
+  "scoreSum",
+  "accuracy",
+  "playtime",
+  "ap",
+  "fc",
+  "clear",
+  "ownedAlias",
+  "explicit",
+];
+
+const loadProfile = (userid: string) =>
+  getOrSet(
     "profile",
-    keys.profile(uid),
+    keys.profile(userid),
     async () => {
       const rows = await knex("users")
-        .select(
-          "nickname",
-          "skins",
-          "picture",
-          "background",
-          "alias",
-          "rating",
-          "rankHistory",
-          "banner",
-          "recentPlay",
-          "scoreSum",
-          "accuracy",
-          "playtime",
-          "ap",
-          "fc",
-          "clear",
-          "ownedAlias",
-          "explicit",
-        )
-        .where("userid", uid);
+        .select(PROFILE_COLUMNS)
+        .where("userid", userid);
       if (!rows.length) return rows;
       // 1위 곡 수는 컬럼이 아니라 trackRecords에서 셉니다. 필드 이름은 유지합니다.
       rows[0]["1stNum"] = await countFirstPlaces(rows[0].nickname);
@@ -86,6 +88,11 @@ router.get("/profile/:uid", async (req, res) => {
     },
     { cacheEmpty: false },
   );
+
+const respondProfile = async (
+  res: express.Response,
+  results: Record<string, unknown>[],
+) => {
   if (!results.length) {
     res
       .status(400)
@@ -101,7 +108,7 @@ router.get("/profile/:uid", async (req, res) => {
   if (higher === null) {
     // 인덱스가 없으면 DB로 폴백하고 배경에서 채웁니다.
     const [row] = await knex("users")
-      .where("rating", ">", results[0].rating)
+      .where("rating", ">", rating)
       .count({ higher: "*" });
     higher = Number(row.higher);
     rebuildRatingIndexIfNeeded().catch((err) => signale.error(err));
@@ -109,6 +116,37 @@ router.get("/profile/:uid", async (req, res) => {
   const rank = higher + 1;
 
   res.status(200).json({ result: "success", user: results[0], rank });
+};
+
+/**
+ * 닉네임으로 조회하는 공개 프로필입니다. 순위표에서 넘어오는 경로가 여기이며,
+ * 남의 프로필을 보기 위해 내부 식별자(userid)를 알 필요가 없습니다.
+ *
+ * 닉네임을 userid로 바꾼 뒤 아래 /profile/:uid와 같은 캐시 항목을 씁니다.
+ * 별도 키를 두면 프로필을 무효화하는 모든 경로가 두 키를 함께 지워야 합니다.
+ */
+router.get("/profile/nickname/:nickname", async (req, res) => {
+  const nickname = req.params.nickname;
+  if (!isValidNickname(nickname)) {
+    res
+      .status(400)
+      .json(createErrorResponse("failed", "Wrong Format", "Invalid nickname."));
+    return;
+  }
+  const userid = await useridOf(nickname);
+  if (!userid) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse("failed", "Failed to Load", "Cannot find user."),
+      );
+    return;
+  }
+  await respondProfile(res, await loadProfile(userid));
+});
+
+router.get("/profile/:uid", async (req, res) => {
+  await respondProfile(res, await loadProfile(req.params.uid));
 });
 
 router.get("/profilePic/:username", async (req, res) => {

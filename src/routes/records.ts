@@ -5,11 +5,12 @@ import { observer } from "../achievements";
 import { createSuccessResponse, createErrorResponse } from "../api-response";
 import { getOrSet, keys } from "../cache";
 import { knex } from "../db";
+import { rateLimit } from "../middleware/rate-limit";
 import { requireLogin } from "../middleware/require-login";
 import { submitRecord } from "../record";
 import { writeReplayLog } from "../replay-log";
 import { notFound } from "../respond";
-import { nicknameExists, trackExists } from "../services/tracks";
+import { nicknameExists, trackExists, useridOf } from "../services/tracks";
 import {
   isValidFileName,
   isValidNickname,
@@ -24,7 +25,16 @@ import {
 
 export const router = express.Router();
 
-router.put("/playRecord", requireLogin, async (req, res) => {
+// 한 판이 아무리 짧아도 분당 수십 판은 나올 수 없습니다. 기록 제출은 DB 쓰기와
+// 리플레이 파일 생성을 동반하므로, 전역 한도(600/분)만으로는 로그인한 사용자
+// 한 명이 디스크와 DB를 밀어붙일 수 있습니다.
+const playRecordLimiter = rateLimit({
+  windowSec: 60,
+  max: 30,
+  prefix: "playrecord",
+});
+
+router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
   //doesn't scan the entire record yet
   //userid, username, rank, score, maxCombo, perfect, great, good, bad, miss, bullet, accuracy, record
 
@@ -296,9 +306,8 @@ router.get("/trackRecords/:nickname", async (req, res) => {
 });
 
 // recentPlay의 id마다 /record/:index를 호출하던 것을 요청 한 번으로 대체합니다.
-router.get("/recentPlays/:uid", async (req, res) => {
-  const uid = req.params.uid;
-  const results = await getOrSet("record", keys.recentPlays(uid), async () => {
+const loadRecentPlays = (uid: string) =>
+  getOrSet("record", keys.recentPlays(uid), async () => {
     const users = await knex("users").select("recentPlay").where("userid", uid);
     if (!users.length) return null;
     const parsed = parseJson(users[0].recentPlay);
@@ -328,6 +337,11 @@ router.get("/recentPlays/:uid", async (req, res) => {
       .map((index) => byIndex.get(index))
       .filter((row) => row !== undefined);
   });
+
+const respondRecentPlays = (
+  res: express.Response,
+  results: Awaited<ReturnType<typeof loadRecentPlays>>,
+) => {
   if (results === null) {
     res
       .status(400)
@@ -337,6 +351,31 @@ router.get("/recentPlays/:uid", async (req, res) => {
     return;
   }
   res.status(200).json({ result: "success", results });
+};
+
+// 공개 프로필은 닉네임으로 조회합니다(/profile/nickname/:nickname과 같은 이유).
+router.get("/recentPlays/nickname/:nickname", async (req, res) => {
+  const nickname = req.params.nickname;
+  if (!isValidNickname(nickname)) {
+    res
+      .status(400)
+      .json(createErrorResponse("failed", "Wrong Format", "Invalid nickname."));
+    return;
+  }
+  const uid = await useridOf(nickname);
+  if (!uid) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse("failed", "Failed to Load", "Cannot find user."),
+      );
+    return;
+  }
+  respondRecentPlays(res, await loadRecentPlays(uid));
+});
+
+router.get("/recentPlays/:uid", async (req, res) => {
+  respondRecentPlays(res, await loadRecentPlays(req.params.uid));
 });
 
 router.get("/record/:filename/:nickname", async (req, res) => {

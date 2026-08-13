@@ -8,7 +8,8 @@
     "game": "https://game.example.com",
     "secretKey": "Something Random",
     "port": 8080,
-    "replayLogRetentionDays": 14
+    "replayLogRetentionDays": 14,
+    "trustProxy": 2
   },
   "database": {
     "db": "ExampleDB",

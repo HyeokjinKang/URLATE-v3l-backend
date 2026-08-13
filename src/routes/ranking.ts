@@ -33,11 +33,12 @@ router.get("/ranking/:sort/:limit", async (req, res) => {
     // 상위 100개를 한 번만 캐싱한 뒤 잘라서 응답합니다.
     const top = await getOrSet("ranking", keys.ranking(sort), () =>
       knex("users")
+        // userid(구글 sub)는 순위 표시에 쓰이지 않습니다. 프로필은 닉네임으로
+        // 조회하므로 내부 식별자를 100명분씩 내보낼 이유가 없습니다.
         .select(
           "nickname",
           "rating",
           "picture",
-          "userid",
           "accuracy",
           "scoreSum",
           "explicit",

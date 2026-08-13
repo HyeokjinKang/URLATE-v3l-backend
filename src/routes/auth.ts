@@ -17,8 +17,10 @@ import {
 } from "../middleware/csrf";
 import { rateLimit } from "../middleware/rate-limit";
 import { isProduction } from "../middleware/session";
+import { isBlockedNickname } from "../nickname-policy";
 import { setRating } from "../rating-index";
 import { defaultSettings } from "../settings";
+import { isValidNickname } from "../validate";
 
 const gidClient = new OAuth2Client(config.google.clientId);
 
@@ -149,14 +151,28 @@ router.post("/auth/join", async (req, res) => {
     return;
   }
 
-  const namePattern = /^[a-zA-Z0-9_-]{5,12}$/;
-  const isValidated = namePattern.test(req.body.displayName);
-  if (!isValidated) {
+  // 문자열 검사가 빠지면 RegExp.test가 인자를 문자열로 바꿔 검사합니다.
+  // displayName을 아예 보내지 않으면 "undefined"(영숫자 9자)가 되어 통과합니다.
+  const displayName = req.body.displayName;
+  if (!isValidNickname(displayName)) {
     res
       .status(400)
       .json(
         createErrorResponse("failed", "Wrong Format", "Wrong name format."),
       );
+    return;
+  }
+
+  // 형식은 맞지만 쓸 수 없는 이름입니다(예약어·욕설).
+  if (isBlockedNickname(displayName)) {
+    res.status(400).json(
+      createErrorResponse(
+        "failed",
+        // 어느 목록에 걸렸는지는 알리지 않습니다.
+        "Reserved Name",
+        "The name sent cannot be used.",
+      ),
+    );
     return;
   }
 
@@ -179,11 +195,11 @@ router.post("/auth/join", async (req, res) => {
 
   const results = await knex("users")
     .select("nickname")
-    .where("nickname", req.body.displayName);
+    .where("nickname", displayName);
   if (!results[0]) {
     try {
       await knex("users").insert({
-        nickname: req.body.displayName,
+        nickname: displayName,
         userid: req.session.userid,
         date: new Date(),
         email: req.session.email,
