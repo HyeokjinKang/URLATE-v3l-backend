@@ -71,9 +71,12 @@ const start = async () => {
 
   scheduleJobs();
 
-  const server = app.listen(config.project.port, () => {
+  // 리버스 프록시가 앞에 있으므로 기본값은 루프백입니다. 와일드카드로 열면
+  // 포트가 방화벽 정책과 무관하게 외부에 그대로 노출됩니다.
+  const host = config.project.host ?? "127.0.0.1";
+  const server = app.listen(config.project.port, host, () => {
     signale.info(new Date());
-    signale.success(`API Server running at port ${config.project.port}.`);
+    signale.success(`API Server running at ${host}:${config.project.port}.`);
   });
 
   // 배포·재시작 시 진행 중인 요청을 끝내고 자원을 정리합니다. 정리 없이
