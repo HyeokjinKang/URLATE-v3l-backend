@@ -1,6 +1,6 @@
 import express from "express";
 import signale from "signale";
-import { OAuth2Client } from "google-auth-library";
+import { OAuth2Client, type TokenPayload } from "google-auth-library";
 
 import {
   createSuccessResponse,
@@ -32,6 +32,36 @@ const gidVerify = async (token: string, clientId: string) => {
     audience: clientId,
   });
   return ticket.getPayload();
+};
+
+/**
+ * 가입할 때 저장한 이메일을 구글이 방금 준 값으로 맞춥니다.
+ *
+ * 구글이 계정 대표 이메일 변경을 지원하면서 저장해 둔 주소가 낡을 수 있습니다.
+ * 계정 식별자인 sub는 주소가 바뀌어도 그대로이므로 이를 기준으로 갱신합니다.
+ *
+ * 검증되지 않은 주소는 반영하지 않습니다. 구글은 소유가 확인되지 않은 주소도
+ * payload에 실어 보내므로, 그대로 저장하면 남의 주소가 계정에 붙을 수 있습니다.
+ *
+ * 갱신에 실패해도 로그인은 막지 않습니다. 로그인 판별은 sub로만 하고 이메일은
+ * 부가 정보라, 실패하면 다음 로그인에서 다시 맞추면 됩니다.
+ */
+const syncEmail = async (payload: TokenPayload) => {
+  if (!payload.sub || !payload.email || payload.email_verified !== true) return;
+
+  try {
+    // <=>는 NULL 안전 비교입니다. 일반 <>를 쓰면 저장된 값이 NULL일 때 비교가
+    // 참이 되지 않아, 이메일이 비어 있는 계정은 영영 갱신되지 않습니다.
+    const changed = await knex("users")
+      .where("userid", payload.sub)
+      .whereRaw("NOT (email <=> ?)", [payload.email])
+      .update({ email: payload.email });
+
+    // 주소 자체는 남기지 않습니다. 로그로 새어 나갈 이유가 없습니다.
+    if (changed > 0) signale.info(`Email updated : ${payload.sub}`);
+  } catch (err) {
+    signale.error(err);
+  }
 };
 
 router.get("/auth/status", async (req, res) => {
@@ -85,6 +115,10 @@ router.post(
         config.google.clientId,
       );
       if (payload) {
+        // 세션에 담기 전에 맞춥니다. 가입은 세션의 이메일을 그대로 넣으므로,
+        // 순서가 뒤바뀌면 갱신 직후 가입한 계정에 낡은 주소가 남습니다.
+        await syncEmail(payload);
+
         // 세션 고정 방지를 위해 인증 성공 시 세션 ID를 재발급합니다.
         req.session.regenerate((regenErr) => {
           if (regenErr) {
