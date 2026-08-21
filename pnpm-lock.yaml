@@ -81,12 +81,6 @@ importers:
       '@types/signale':
         specifier: ^1.4.7
         version: 1.4.7
-      '@typescript-eslint/eslint-plugin':
-        specifier: ^8.67.0
-        version: 8.67.0(@typescript-eslint/parser@8.67.0(eslint@10.8.1(supports-color@5.5.0))(supports-color@5.5.0)(typescript@5.9.3))(eslint@10.8.1(supports-color@5.5.0))(supports-color@5.5.0)(typescript@5.9.3)
-      '@typescript-eslint/parser':
-        specifier: ^8.67.0
-        version: 8.67.0(eslint@10.8.1(supports-color@5.5.0))(supports-color@5.5.0)(typescript@5.9.3)
       eslint:
         specifier: ^10.8.1
         version: 10.8.1(supports-color@5.5.0)
@@ -96,6 +90,9 @@ importers:
       json-schema-to-typescript:
         specifier: ^15.0.4
         version: 15.0.4
+      prettier:
+        specifier: ^3.9.6
+        version: 3.9.6
       supervisor:
         specifier: ^0.12.0
         version: 0.12.0
