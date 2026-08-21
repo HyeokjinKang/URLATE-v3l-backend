@@ -203,7 +203,10 @@ export const submitRecord = async (submission: RecordSubmission) => {
           ) / 100
         ).toFixed(2),
         recentPlay: JSON.stringify(
-          [index, ...(Array.isArray(recentPlay) ? recentPlay : [])].slice(0, 10),
+          [index, ...(Array.isArray(recentPlay) ? recentPlay : [])].slice(
+            0,
+            10,
+          ),
         ),
         playtime: Number(user[0].playtime) + 1,
         ap: Number(user[0].ap) + ap,
