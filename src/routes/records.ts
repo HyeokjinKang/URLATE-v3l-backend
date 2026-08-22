@@ -35,9 +35,6 @@ const playRecordLimiter = rateLimit({
 });
 
 router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
-  // Does not scan the entire record yet.
-  // Payload shape: userid, username, rank, score, maxCombo, perfect, great, good, bad, miss, bullet, accuracy, record
-
   const results = await knex("users")
     .select("nickname", "userid")
     .where("userid", req.session.userid);
@@ -188,7 +185,6 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
     medal,
   });
   try {
-    // Only validated values are passed through.
     await submitRecord({
       fileName,
       nickname,

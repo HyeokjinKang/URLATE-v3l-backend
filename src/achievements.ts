@@ -107,11 +107,10 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
     parseJson<number[]>(userData[0].achievements) ?? [],
   );
 
-  // Get achievement index array from data. It will be [] if there is no achievement.
   const index: number[] = await achievedIndex(context, data);
 
-  // For RANK context, we need to process all achievements to update aliases,
-  // but only send notifications for new achievements
+  // RANK reprocesses every achievement to keep aliases in sync, but only
+  // notifies for the newly unlocked ones.
   let filteredIndex: number[];
   let newAchievements: number[];
 
@@ -129,7 +128,6 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
 
   const achievementsList: Array<Achievement> = [];
   for (const i of newAchievements) {
-    // Achieved!
     knex("achievements")
       .where("index", i)
       .increment("count")
@@ -182,7 +180,6 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
     }
   }
 
-  // Update user data
   const updated = {
     achievements: JSON.stringify(Array.from(achievements)),
     ownedAlias: JSON.stringify(Array.from(ownedAlias)),
@@ -213,7 +210,6 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
     await invalidate(keys.profile(userid), keys.user(userid));
   }
 
-  // Send achievement data to game server only if there are new achievements
   if (achievementsList.length > 0) {
     fetch(`${config.project.game}/emit/achievement`, {
       method: "POST",
