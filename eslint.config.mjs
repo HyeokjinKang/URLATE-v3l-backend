@@ -2,13 +2,11 @@ import js from "@eslint/js";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 import { defineConfig } from "eslint/config";
+import prettier from "eslint-config-prettier/flat";
 
 export default defineConfig([
   {
-    // 빌드 산출물과 생성 파일은 검사 대상이 아닙니다.
-    // src/types는 `pnpm generate-types-from-schema`가 만들어 내며 손으로
-    // 고치면 안 되는 파일이라, 여기서 걸러 두지 않으면 생성기가 넣는
-    // /* eslint-disable */ 헤더가 매번 경고로 남습니다.
+    // Build output and vendored files aren't lint targets.
     ignores: ["dist/**", "src/types/**"],
   },
   {
@@ -17,5 +15,15 @@ export default defineConfig([
     extends: ["js/recommended"],
     languageOptions: { globals: globals.node },
   },
-  tseslint.configs.recommended,
+  {
+    // typescript-eslint rules apply only to TS files. Applying them globally
+    // would swap base no-unused-vars for the TS version even in browser .js
+    // files, breaking existing suppression comments via the rule-name mismatch.
+    files: ["**/*.{ts,mts,cts}"],
+    extends: [tseslint.configs.recommended],
+  },
+  // Must stay last. Turns off formatting rules prettier owns, so the two
+  // don't fight each other. This was a real conflict: eslint's
+  // no-unexpected-multiline was flagging line breaks prettier inserted.
+  prettier,
 ]);
