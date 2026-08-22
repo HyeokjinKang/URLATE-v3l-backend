@@ -5,11 +5,13 @@ import { createErrorResponse } from "../api-response";
 import config from "../config";
 
 /**
- * CSRF 방어입니다. SameSite=lax는 상위 도메인을 공유하는 사이트끼리 쿠키를
- * 그대로 보내므로, Origin(없으면 Referer)을 신뢰 목록과 대조하는 계층을 더 둡니다.
+ * CSRF defense. SameSite=lax still sends cookies between sites that share a
+ * parent domain, so this adds a layer that checks Origin (falling back to
+ * Referer) against an allowlist.
  *
- * 둘 다 없는 요청은 통과시킵니다. 브라우저는 상태 변경 요청에 Origin을 반드시
- * 붙이므로 이 경우는 서버 간 호출이며, 그 경로는 project secret으로 인증합니다.
+ * A request with neither is let through. Browsers always attach Origin on a
+ * state-changing request, so this case is a server-to-server call, and that
+ * path is authenticated with the project secret instead.
  */
 const CSRF_SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -28,7 +30,7 @@ const toOrigin = (value?: string): string | null => {
   }
 };
 
-// 브라우저가 아니면 null입니다.
+// Null for a non-browser caller.
 export const requestOrigin = (req: express.Request): string | null =>
   toOrigin(req.get("origin")) ?? toOrigin(req.get("referer"));
 

@@ -2,7 +2,7 @@ import express from "express";
 
 import { createErrorResponse } from "./api-response";
 
-// 조회 대상이 없을 때 공통으로 쓰는 응답입니다.
+// Shared response for a lookup target that doesn't exist.
 export const notFound = (res: express.Response, description: string) => {
   res
     .status(400)

@@ -35,29 +35,31 @@ const gidVerify = async (token: string, clientId: string) => {
 };
 
 /**
- * 가입할 때 저장한 이메일을 구글이 방금 준 값으로 맞춥니다.
+ * Syncs the stored email to whatever Google just handed back at login.
  *
- * 구글이 계정 대표 이메일 변경을 지원하면서 저장해 둔 주소가 낡을 수 있습니다.
- * 계정 식별자인 sub는 주소가 바뀌어도 그대로이므로 이를 기준으로 갱신합니다.
+ * Google lets an account's primary email change, so the stored address can
+ * go stale. The account identifier sub stays fixed across that change, so
+ * updates are keyed on it.
  *
- * 검증되지 않은 주소는 반영하지 않습니다. 구글은 소유가 확인되지 않은 주소도
- * payload에 실어 보내므로, 그대로 저장하면 남의 주소가 계정에 붙을 수 있습니다.
+ * Unverified addresses are never applied. Google includes addresses whose
+ * ownership hasn't been confirmed in the payload too, and storing one as-is
+ * would let someone else's address get attached to this account.
  *
- * 갱신에 실패해도 로그인은 막지 않습니다. 로그인 판별은 sub로만 하고 이메일은
- * 부가 정보라, 실패하면 다음 로그인에서 다시 맞추면 됩니다.
+ * A sync failure never blocks login. Login is decided by sub alone; email is
+ * secondary and will simply resync on the next login.
  */
 const syncEmail = async (payload: TokenPayload) => {
   if (!payload.sub || !payload.email || payload.email_verified !== true) return;
 
   try {
-    // <=>는 NULL 안전 비교입니다. 일반 <>를 쓰면 저장된 값이 NULL일 때 비교가
-    // 참이 되지 않아, 이메일이 비어 있는 계정은 영영 갱신되지 않습니다.
+    // <=> is a NULL-safe comparison. Plain <> would never be true when the
+    // stored value is NULL, so an account with no email would never sync.
     const changed = await knex("users")
       .where("userid", payload.sub)
       .whereRaw("NOT (email <=> ?)", [payload.email])
       .update({ email: payload.email });
 
-    // 주소 자체는 남기지 않습니다. 로그로 새어 나갈 이유가 없습니다.
+    // The address itself isn't logged; no reason for it to leak into logs.
     if (changed > 0) signale.info(`Email updated : ${payload.sub}`);
   } catch (err) {
     signale.error(err);
@@ -71,7 +73,7 @@ router.get("/auth/status", async (req, res) => {
     return;
   }
 
-  // 가입 여부는 한번 참이 되면 되돌아가지 않아 길게 캐싱해도 안전합니다.
+  // Registration status only ever flips false -> true, so it's safe to cache for a long time.
   const registered = await getOrSet(
     "authStatus",
     keys.authStatus(userid),
@@ -109,17 +111,18 @@ router.post(
           );
         return;
       }
-      // audience는 서버 설정값으로 고정합니다(클라이언트 clientId 불신).
+      // audience is pinned to the server config value; the client-supplied clientId isn't trusted.
       const payload = await gidVerify(
         req.body.jwt.credential,
         config.google.clientId,
       );
       if (payload) {
-        // 세션에 담기 전에 맞춥니다. 가입은 세션의 이메일을 그대로 넣으므로,
-        // 순서가 뒤바뀌면 갱신 직후 가입한 계정에 낡은 주소가 남습니다.
+        // Sync before writing to the session. Join copies the session's email
+        // as-is, so doing this out of order would leave a stale address on an
+        // account that just registered right after a sync.
         await syncEmail(payload);
 
-        // 세션 고정 방지를 위해 인증 성공 시 세션 ID를 재발급합니다.
+        // Regenerate the session ID on successful auth to prevent session fixation.
         req.session.regenerate((regenErr) => {
           if (regenErr) {
             signale.error(regenErr);
@@ -185,8 +188,9 @@ router.post("/auth/join", async (req, res) => {
     return;
   }
 
-  // 문자열 검사가 빠지면 RegExp.test가 인자를 문자열로 바꿔 검사합니다.
-  // displayName을 아예 보내지 않으면 "undefined"(영숫자 9자)가 되어 통과합니다.
+  // Without the string check, RegExp.test would coerce the argument to a
+  // string -- omitting displayName entirely becomes "undefined" (9
+  // alphanumeric chars) and passes.
   const displayName = req.body.displayName;
   if (!isValidNickname(displayName)) {
     res
@@ -197,12 +201,12 @@ router.post("/auth/join", async (req, res) => {
     return;
   }
 
-  // 형식은 맞지만 쓸 수 없는 이름입니다(예약어·욕설).
+  // Well-formed but unusable (reserved words, profanity).
   if (isBlockedNickname(displayName)) {
     res.status(400).json(
       createErrorResponse(
         "failed",
-        // 어느 목록에 걸렸는지는 알리지 않습니다.
+        // Doesn't reveal which list the name matched.
         "Reserved Name",
         "The name sent cannot be used.",
       ),
@@ -273,7 +277,7 @@ router.post("/auth/join", async (req, res) => {
       }
       throw err;
     }
-    // 가입 즉시 로그인 상태로 보이도록 비웁니다.
+    // Invalidate so the account shows as registered immediately.
     await invalidate(keys.authStatus(req.session.userid));
     await setRating(req.session.userid, 0);
     delete req.session.tempName;
@@ -293,7 +297,7 @@ router.post("/auth/join", async (req, res) => {
   }
 });
 
-// 세션을 저장소에서 지우고 쿠키도 회수합니다.
+// Removes the session from the store and clears the cookie.
 const destroySession = (
   req: express.Request,
   res: express.Response,
@@ -312,7 +316,7 @@ const destroySession = (
   });
 };
 
-// 권장 경로입니다. POST라 csrfGuard의 보호를 받습니다.
+// Preferred route; POST means csrfGuard covers it.
 router.post("/auth/logout", (req, res) => {
   destroySession(req, res, () => {
     res.status(200).json(createSuccessResponse("success"));
@@ -320,9 +324,10 @@ router.post("/auth/logout", (req, res) => {
 });
 
 /**
- * 최상위 내비게이션으로 로그아웃하고 프론트엔드로 돌아가는 경로입니다.
- * GET이라 csrfGuard가 적용되지 않으므로 출처를 직접 확인합니다. 이 검사가
- * 없으면 <img src="...auth/logout">만으로 남의 세션을 끊을 수 있습니다.
+ * Logs out via top-level navigation and returns to the frontend.
+ * GET means csrfGuard doesn't cover this, so the origin is checked directly.
+ * Without this check, an <img src="...auth/logout"> alone could end someone
+ * else's session.
  */
 router.get("/auth/logout", (req, res) => {
   if (!isAllowedOrigin(requestOrigin(req))) {

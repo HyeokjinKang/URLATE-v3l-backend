@@ -12,8 +12,8 @@ export const notFoundHandler = (
     .json(createErrorResponse("failed", "Not Found", "Unknown endpoint."));
 };
 
-// 전역 에러 핸들러입니다. 스택 등 내부 정보를 노출하지 않습니다.
-// Express는 인자 4개인 미들웨어를 에러 핸들러로 인식하므로 next를 유지해야 합니다.
+// Global error handler. Doesn't expose internal details like stack traces.
+// Express identifies an error handler by its 4-argument signature, so next must stay.
 export const errorHandler = (
   err: unknown,
   req: express.Request,
@@ -23,8 +23,9 @@ export const errorHandler = (
 ) => {
   signale.error(err);
   if (res.headersSent) return;
-  // body-parser가 붙이는 4xx(깨진 JSON 400, 크기 초과 413)를 그대로 씁니다.
-  // 전부 500으로 뭉개면 요청 잘못인지 서버 고장인지 구분할 수 없습니다.
+  // Preserves the 4xx that body-parser attaches (malformed JSON 400, oversized
+  // body 413). Collapsing everything to 500 would hide whether the request was
+  // bad or the server broke.
   const status =
     (err as { status?: number; statusCode?: number } | null)?.status ??
     (err as { statusCode?: number } | null)?.statusCode;

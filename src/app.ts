@@ -18,25 +18,28 @@ import { router as usersRouter } from "./routes/users";
 export const app = express();
 app.locals.pretty = true;
 
-// 버전 노출을 막습니다.
+// Avoid exposing the framework/version.
 app.disable("x-powered-by");
 
-// 앞단 프록시가 HTTPS를 종단하므로 X-Forwarded-Proto를 신뢰해야 secure 쿠키가
-// 동작하고, 레이트리밋이 쓰는 req.ip도 X-Forwarded-For에서 나옵니다.
+// The proxy in front terminates HTTPS, so X-Forwarded-Proto has to be
+// trusted for secure cookies to work, and req.ip (used by rate limiting)
+// comes from X-Forwarded-For too.
 //
-// 이 값은 실제 홉 수와 정확히 같아야 합니다. Express는 X-Forwarded-For의 뒤에서
-// 이 개수만큼을 건너뛴 주소를 req.ip로 씁니다. 프론트엔드는 CDN + 리버스 프록시
-// 2홉을 확인해 두었고(config.project.trustProxy), 여기서 1을 쓰면 req.ip가
-// CDN 주소로 고정되어 전 사용자가 하나의 레이트리밋 버킷을 공유합니다.
+// This value must exactly match the real hop count. Express takes req.ip
+// from X-Forwarded-For by skipping this many addresses from the end. The
+// frontend sits behind CDN + reverse proxy, 2 hops (config.project.trustProxy).
+// Setting this to 1 would pin req.ip to the CDN's address, and every user
+// would share a single rate-limit bucket.
 app.set("trust proxy", config.project.trustProxy ?? 2);
 
 app.use(securityHeaders);
 
-// 차단될 요청이 세션 조회와 본문 파싱 비용을 치르지 않도록 앞에 둡니다.
+// Placed early so a request that's about to be blocked doesn't pay for
+// session lookup and body parsing first.
 app.use(rateLimit({ windowSec: 60, max: 600, prefix: "global" }));
 
 app.use(sessionMiddleware);
-// 가장 큰 본문인 리플레이 로그를 담을 수 있는 선으로 고정합니다(기본값은 100kb).
+// Capped to fit the largest body, the replay log (default is 100kb).
 app.use(express.json({ limit: "512kb" }));
 app.use(express.urlencoded({ extended: true, limit: "64kb" }));
 app.use(cookieParser());
@@ -53,7 +56,7 @@ app.use(couponRouter);
 app.use(rankingRouter);
 app.use(noticeRouter);
 
-// 라우터 뒤에 와야 합니다. 앞에 두면 모든 요청이 404로 끝납니다.
+// Must come after the routers; placed earlier, every request would end in a 404.
 app.use(notFoundHandler);
 
 app.use(errorHandler);

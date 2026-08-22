@@ -22,19 +22,20 @@ router.get("/ranking/:sort/:limit", async (req, res) => {
       );
     return;
   }
-  // limit는 1~100 범위로 제한합니다(과도한 조회 방지).
+  // Clamp limit to 1-100 to prevent excessive queries.
   const limit = Math.min(
     Math.max(toFiniteNonNegInt(req.params.limit) ?? 0, 1),
     100,
   );
   let results;
   try {
-    // limit이 달라도 정렬 결과의 앞부분을 자르는 것이므로,
-    // 상위 100개를 한 번만 캐싱한 뒤 잘라서 응답합니다.
+    // Any limit is just a prefix of the same sorted result, so the top 100 is
+    // cached once and sliced per request.
     const top = await getOrSet("ranking", keys.ranking(sort), () =>
       knex("users")
-        // userid(구글 sub)는 순위 표시에 쓰이지 않습니다. 프로필은 닉네임으로
-        // 조회하므로 내부 식별자를 100명분씩 내보낼 이유가 없습니다.
+        // userid (the Google sub) isn't used for displaying rank; profiles
+        // are looked up by nickname, so there's no reason to send an
+        // internal identifier for 100 users.
         .select(
           "nickname",
           "rating",

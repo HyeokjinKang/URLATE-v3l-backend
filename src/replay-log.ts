@@ -4,16 +4,17 @@ import signale from "signale";
 
 import config from "./config";
 
-// 플레이 리플레이 로그의 기록과 보존 정책입니다.
-// 플레이 1회당 파일 하나가 쌓이므로 정리 경로가 없으면 디스크가 찹니다.
+// Recording and retention policy for play replay logs.
+// One file accumulates per play, so without a cleanup path the disk fills up.
 
-// config에 값이 없을 때 쓰는 기본 보관 일수입니다.
+// Default retention in days, used when config has no value.
 const DEFAULT_RETENTION_DAYS = 14;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-// 리플레이 한 건의 크기 상한입니다. 한 판의 판정 배열은 크기가 뻔하므로,
-// 상한이 없으면 본문 제한(512KB)까지 그대로 파일로 쌓여 디스크가 찹니다.
+// Size cap for a single replay. A play's judgement array has a predictable
+// size, so without a cap it would get written to disk as large as the body
+// limit (512KB) allows.
 const MAX_RECORD_CHARS = 64 * 1024;
 
 export const logsRoot = path.resolve(__dirname, "../logs");
@@ -31,16 +32,16 @@ export const retentionDays = (): number => {
 };
 
 /**
- * 리플레이 로그를 기록합니다. 경로가 로그 루트를 벗어나면 false를 돌려줍니다.
- * nickname과 fileName은 호출부에서 형식 검증을 마친 값이어야 하며, 여기서
- * 한 번 더 확인해 경로 순회를 이중으로 막습니다.
+ * Writes a replay log. Returns false if the resolved path escapes the log
+ * root. nickname and fileName must already be format-validated by the
+ * caller; this re-checks as a second layer against path traversal.
  */
 export const writeReplayLog = (
   nickname: string,
   fileName: string,
   record: unknown,
 ): boolean => {
-  // 보관 일수가 0이면 남기지 않습니다.
+  // Retention of 0 days means don't keep any.
   if (retentionDays() === 0) return true;
   if (record === undefined || record === null) return true;
 
@@ -62,8 +63,8 @@ export const writeReplayLog = (
 };
 
 /**
- * 보관 기간이 지난 로그와 비게 된 디렉터리를 정리합니다.
- * 파일 단위로 순회하므로 로그가 많아도 메모리 사용량이 일정합니다.
+ * Removes logs past their retention period and any directories left empty.
+ * Walks file by file, so memory use stays constant regardless of log count.
  */
 export const cleanupReplayLogs = async () => {
   const days = retentionDays();
@@ -76,7 +77,7 @@ export const cleanupReplayLogs = async () => {
     try {
       entries = await fs.readdir(dir, { withFileTypes: true });
     } catch (err) {
-      // 로그 디렉터리가 아직 없을 수 있습니다.
+      // The log directory may not exist yet.
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") signale.error(err);
       return 0;
     }
@@ -97,7 +98,7 @@ export const cleanupReplayLogs = async () => {
           remaining++;
         }
       } catch (err) {
-        // 파일 하나가 실패해도 나머지 정리는 계속합니다.
+        // A single file failing shouldn't stop the rest of the cleanup.
         if ((err as NodeJS.ErrnoException).code !== "ENOENT")
           signale.error(err);
       }

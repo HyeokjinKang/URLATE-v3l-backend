@@ -4,7 +4,7 @@ import signale from "signale";
 import { createErrorResponse } from "../api-response";
 import { isRedisReady, redisClient } from "../redis";
 
-// Redis 기반이라 인스턴스를 늘려도 카운터가 공유됩니다.
+// Backed by Redis, so the counter is shared even when running multiple instances.
 export const rateLimit =
   (options: { windowSec: number; max: number; prefix: string }) =>
   async (
@@ -12,7 +12,7 @@ export const rateLimit =
     res: express.Response,
     next: express.NextFunction,
   ) => {
-    // 끊겨 있으면 명령마다 예외가 나므로 먼저 확인합니다.
+    // Check first, since every command would throw while disconnected.
     if (!isRedisReady()) {
       next();
       return;
@@ -37,7 +37,7 @@ export const rateLimit =
         return;
       }
     } catch (err) {
-      // Redis 장애 시 요청을 막지 않고 통과시킵니다(가용성 우선).
+      // Let the request through on a Redis failure; availability over strict limiting.
       signale.error(err);
     }
     next();

@@ -2,13 +2,13 @@ import signale from "signale";
 
 import { isRedisReady, redisClient } from "./redis";
 
-// rating 기준 전체 순위를 담는 Sorted Set입니다. 순위 계산이 O(log N)이 됩니다.
+// Sorted Set holding the full rating-based ranking, making rank lookups O(log N).
 const RATING_KEY = "index:v1:rank:rating";
 const BUILD_KEY = `${RATING_KEY}:building`;
 const LOCK_KEY = `${RATING_KEY}:lock`;
-// 재구축 도중 프로세스가 죽어도 락이 남지 않도록 하는 만료 시간(초)입니다.
+// Expiry (seconds) so the lock doesn't linger if the process dies mid-rebuild.
 const LOCK_TTL = 120;
-// ZADD 한 번에 보내는 최대 멤버 수입니다.
+// Max members sent in a single ZADD call.
 const CHUNK_SIZE = 1000;
 
 export interface RatingRow {
@@ -22,7 +22,7 @@ const toMembers = (rows: RatingRow[]) =>
     value: String(row.userid),
   }));
 
-// rating이 바뀔 때 호출합니다.
+// Call this whenever a rating changes.
 export const setRating = async (userid: string | number, rating: number) => {
   if (!isRedisReady()) return;
   try {
@@ -35,8 +35,8 @@ export const setRating = async (userid: string | number, rating: number) => {
   }
 };
 
-// 인덱스를 다시 만듭니다. 임시 키에 적재한 뒤 RENAME으로 교체하므로
-// 재구축 중에도 기존 인덱스가 계속 서비스됩니다.
+// Rebuilds the index. Loads into a temp key and swaps it in with RENAME, so
+// the existing index keeps serving traffic while the rebuild is in progress.
 export const rebuild = async (rows: RatingRow[]) => {
   if (!isRedisReady() || !rows.length) return;
   try {
@@ -55,17 +55,18 @@ export const rebuild = async (rows: RatingRow[]) => {
 };
 
 /**
- * 주어진 rating보다 높은 유저 수를 셉니다. COUNT(*) WHERE rating > ? 와 같은
- * 의미라 동점자 처리도 동일합니다. 인덱스가 비었거나 오류면 null을 돌려주고
- * 호출부가 DB로 폴백합니다.
+ * Counts users with a higher rating than the one given. Equivalent to
+ * COUNT(*) WHERE rating > ?, including tie handling. Returns null if the
+ * index is empty or on error, letting the caller fall back to the DB.
  */
 export const countHigherRating = async (
   rating: number,
 ): Promise<number | null> => {
   if (!isRedisReady() || !Number.isFinite(rating)) return null;
   try {
-    // ZCOUNT만으로는 "인덱스가 비었음"과 "1위"를 구분할 수 없어 ZCARD가 함께
-    // 필요합니다. 같은 틱에 내보내 node-redis가 한 번의 왕복으로 묶게 합니다.
+    // ZCOUNT alone can't distinguish "index is empty" from "rank 1", so ZCARD
+    // is needed alongside it. Issued together so node-redis pipelines them
+    // into a single round trip.
     const [size, higher] = await Promise.all([
       redisClient.zCard(RATING_KEY),
       redisClient.zCount(RATING_KEY, `(${rating}`, "+inf"),
@@ -78,7 +79,7 @@ export const countHigherRating = async (
   }
 };
 
-// 재구축 락입니다. 여러 인스턴스가 동시에 users 전체를 읽는 것을 막습니다.
+// Rebuild lock, preventing multiple instances from scanning all users at once.
 export const acquireRebuildLock = async (): Promise<boolean> => {
   if (!isRedisReady()) return false;
   try {

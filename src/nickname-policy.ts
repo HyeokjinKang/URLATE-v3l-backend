@@ -1,23 +1,27 @@
-// 형식은 맞지만 쓸 수 없는 닉네임을 걸러 냅니다(isValidNickname 통과 이후 단계).
+// Filters nicknames that are well-formed but unusable (a stage after isValidNickname passes).
 //
-// 두 목록을 매칭 방식으로 나눠 씁니다.
-//   RESERVED  — 정규화 후 "완전 일치"할 때만 차단. 사칭·예약어처럼 그 이름
-//               자체가 문제인 경우입니다. 부분 일치로 막으면 badminton 같은
-//               정상적인 이름이 admin에 걸립니다.
-//   PROFANITY — 정규화 후 "포함"되면 차단. 욕설은 앞뒤에 아무 글자나 붙여
-//               피할 수 있어(shibal123, xxfuckxx) 완전 일치로는 의미가 없습니다.
+// The two lists use different matching rules.
+//   RESERVED  — blocked only on an exact match after normalization. For names
+//               that are a problem by themselves, like impersonation or
+//               reserved words. Blocking on substring would catch a legitimate
+//               name like badminton on admin.
+//   PROFANITY — blocked if it appears anywhere in the normalized string.
+//               Profanity can be evaded by padding either side (shibal123,
+//               xxfuckxx), so exact match is pointless here.
 //
-// PROFANITY에는 다른 단어의 일부로 잘 나타나지 않는 4자 이상만 넣습니다.
-// ass, cum 같은 짧은 조각을 넣으면 classic·document가 함께 걸립니다.
-// 그럼에도 오탐은 남습니다(예: shiitake). 새 항목을 넣을 때는 그 문자열이
-// 멀쩡한 단어 안에 들어가지 않는지 먼저 확인하세요.
+// PROFANITY only holds words of 4+ characters that rarely appear inside other
+// words. Shorter fragments like ass or cum would also catch classic or document.
+// False positives still slip through (e.g. shiitake); before adding an entry,
+// check that the string doesn't sit inside an ordinary word.
 
 /**
- * 비교 전에 이름을 정규화합니다. 소문자로 낮추고, 구분자와 흔한 leet 치환을
- * 되돌립니다. adm1n, _admin_, a-d-m-i-n이 모두 admin으로 모입니다.
+ * Normalizes a name before comparison: lowercases it and reverses separators
+ * and common leet substitutions, so adm1n, _admin_ and a-d-m-i-n all collapse
+ * to admin.
  *
- * 정규화가 길이를 줄일 수 있으므로(n_u_l_l → null) 목록에는 5자 미만도
- * 포함해야 합니다. 닉네임 자체의 길이 제한과는 별개입니다.
+ * Normalization can shorten a string (n_u_l_l -> null), so the lists must
+ * include entries under 5 characters too -- independent of the nickname's own
+ * length limit.
  */
 const normalize = (value: string): string =>
   value
@@ -30,10 +34,10 @@ const normalize = (value: string): string =>
     .replace(/5/g, "s")
     .replace(/7/g, "t");
 
-// 정규화한 형태와 정확히 일치할 때만 차단합니다.
+// Blocked only on an exact match against the normalized form.
 const RESERVED = new Set(
   [
-    // 값이 없거나 잘못된 상태의 직렬화 결과
+    // What a missing or invalid value serializes to
     "undefined",
     "null",
     "nan",
@@ -42,7 +46,7 @@ const RESERVED = new Set(
     "false",
     "object",
     "nickname",
-    // 운영 주체 사칭
+    // Impersonating the people who run the service
     "admin",
     "administrator",
     "root",
@@ -58,14 +62,14 @@ const RESERVED = new Set(
     "security",
     "urlate",
     "coupy",
-    // 특정인이 아닌 대상을 가리키는 이름
+    // Names that refer to no one in particular
     "anonymous",
     "guest",
     "everyone",
     "unknown",
     "deleted",
     "bot",
-    // 짧아서 부분 일치로 넣을 수 없는 욕설은 여기서 완전 일치로만 막습니다.
+    // Too short for the substring list, so blocked here on exact match only.
     "ass",
     "cum",
     "fag",
@@ -78,9 +82,9 @@ const RESERVED = new Set(
   ].map(normalize),
 );
 
-// 정규화한 문자열 어디에든 들어 있으면 차단합니다.
+// Blocked if it appears anywhere in the normalized string.
 const PROFANITY = [
-  // 영어
+  // English
   "fuck",
   "shit",
   "bitch",
@@ -98,7 +102,7 @@ const PROFANITY = [
   "retard",
   "cocksuck",
   "motherfuck",
-  // 한국어 로마자 표기
+  // Korean, romanized
   "sibal",
   "shibal",
   "ssibal",
@@ -121,26 +125,28 @@ const PROFANITY = [
 ].map(normalize);
 
 /**
- * PROFANITY 항목을 품고 있지만 멀쩡한 문자열입니다. 검사 전에 지워 둡니다.
+ * Ordinary strings that happen to contain a PROFANITY entry; stripped out before
+ * the check runs.
  *
- * 부분 일치는 음절 경계를 모르기 때문에, 일본어·한국어 로마자에서 자주 나오는
- * shi + ta/to가 shit으로 읽힙니다(ashita, yoshito, ishita, shiitake …).
- * 여기서 지우면 그 이름들이 통과합니다. 대신 shitaaa처럼 뒤에 모음을 붙인
- * 회피는 함께 통과합니다. 욕설 필터는 예의 장치이지 보안 통제가 아니므로,
- * 작정한 회피를 막는 것보다 멀쩡한 이름을 막지 않는 쪽을 택했습니다.
+ * Substring matching has no notion of syllable boundaries, so shi + ta/to --
+ * common in romanized Japanese and Korean -- reads as shit (ashita, yoshito,
+ * ishita, shiitake, ...). Stripping these here lets those names through, at the
+ * cost of also letting through a deliberate evasion like shitaaa. The filter is
+ * a courtesy, not a security control, so letting a legitimate name through beats
+ * blocking one by mistake.
  *
- * 오탐 신고가 들어오면 대부분 여기에 한 줄 추가하면 됩니다.
+ * Most false-positive reports can be fixed by adding one line here.
  */
 const ALLOWED = ["shita", "shito"].map(normalize);
 
 /**
- * 쓸 수 없는 닉네임이면 true입니다. 이미 가입한 사용자에게는 적용하지 않습니다
- * (닉네임을 바꾸는 경로가 없어 가입 시점에만 판단하면 됩니다).
+ * True if the nickname is unusable. Not applied to users who already signed up
+ * (there's no rename path, so this only needs to run at signup).
  */
 export const isBlockedNickname = (nickname: string): boolean => {
   const normalized = normalize(nickname);
   if (RESERVED.has(normalized)) return true;
-  // 지운 자리는 공백으로 채웁니다. 그냥 이으면 없던 단어가 생길 수 있습니다.
+  // Replace a stripped span with a space; joining directly could form a new word.
   const scanned = ALLOWED.reduce(
     (acc, safe) => acc.split(safe).join(" "),
     normalized,

@@ -9,7 +9,7 @@ import { isValidFileName } from "../validate";
 export const router = express.Router();
 
 router.get("/tracks", async (req, res) => {
-  // 페이지 진입마다 호출되지만 곡이 추가될 때만 바뀝니다.
+  // Called on every page load, but only changes when a track is added.
   const results = await getAllTracks();
   if (!results.length) {
     res
@@ -62,7 +62,7 @@ router.get("/track/:name", async (req, res) => {
 });
 
 router.get("/trackInfo/:filename", async (req, res) => {
-  // 곡을 고를 때마다 호출되지만 패턴이 갱신될 때만 바뀝니다.
+  // Called on every track selection, but only changes when the pattern is updated.
   const filename = req.params.filename;
   if (!isValidFileName(filename)) {
     res

@@ -1,6 +1,6 @@
 import express from "express";
 
-// CORS 헤더는 프록시가 담당합니다. 여기서도 넣으면 중복되어 브라우저가 차단합니다.
+// CORS headers are handled by the proxy; adding them here too would duplicate them and get blocked by the browser.
 export const securityHeaders = (
   req: express.Request,
   res: express.Response,
@@ -8,14 +8,14 @@ export const securityHeaders = (
 ) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  // 본인 데이터(/user 등)가 공유 캐시에 남지 않도록 합니다.
+  // Keeps personal data (e.g. /user) out of shared caches.
   res.setHeader("Cache-Control", "no-store");
   next();
 };
 
-// Express 5는 본문 파서가 처리하지 못한 요청의 req.body를 undefined로 둡니다
-// (Express 4는 {}). 라우트가 req.body.x를 곧바로 읽으므로 Content-Type 하나만
-// 어긋나도 400이어야 할 응답이 TypeError로 500이 됩니다.
+// Express 5 leaves req.body undefined when the body parser can't handle a
+// request (Express 4 used {}). Routes read req.body.x directly, so a single
+// mismatched Content-Type would turn what should be a 400 into a TypeError-driven 500.
 export const ensureBody = (
   req: express.Request,
   res: express.Response,

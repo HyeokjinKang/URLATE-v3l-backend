@@ -9,7 +9,7 @@ const redisStore = new RedisStore({
   prefix: "urlate:",
 });
 
-// 로컬 HTTP 개발용으로 test 모드에서만 secure 쿠키를 해제합니다.
+// secure cookies are disabled only in test mode, for local HTTP development.
 export const isProduction = config.project.mode !== "test";
 
 export const sessionMiddleware = session({
@@ -23,6 +23,6 @@ export const sessionMiddleware = session({
     httpOnly: true,
     secure: isProduction,
     sameSite: "lax",
-    maxAge: 1000 * 60 * 60 * 24 * 14, // 14일
+    maxAge: 1000 * 60 * 60 * 24 * 14, // 14 days
   },
 });
