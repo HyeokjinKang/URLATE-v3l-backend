@@ -8,7 +8,7 @@ import { NOTICE_LANGS } from "../validate";
 export const router = express.Router();
 
 router.get("/notice/:lang", async (req, res) => {
-  // 컬럼명 조합에 쓰이므로 화이트리스트로 제한합니다.
+  // Used to build column names, so restricted to a whitelist.
   if (!NOTICE_LANGS.has(req.params.lang)) {
     res
       .status(400)

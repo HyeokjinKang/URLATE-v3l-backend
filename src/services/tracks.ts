@@ -20,14 +20,11 @@ export const getAllTracks = () =>
     },
   );
 
-/**
- * 캐시 계층에 닿기 전에 대상의 실재 여부를 확인합니다. 캐시 키는 요청 파라미터를
- * 그대로 쓰고 빈 결과도 저장하므로, 없는 값을 반복 조회하는 것만으로 Redis에
- * 쓰레기 키가 무한히 쌓입니다. 닉네임 형식이 허용하는 조합이 사실상 무한해
- * 형식 검증만으로는 부족합니다.
- *
- * 두 검사 모두 기존 캐시 키를 재사용하므로 정상 요청에는 추가 조회가 없습니다.
- */
+// Existence check before the cache layer. Cache keys come straight from request
+// parameters and empty results are stored, so querying nonexistent values would
+// pile up junk keys indefinitely -- and the nickname format allows effectively
+// unlimited combinations. Both checks reuse existing keys, so a normal request
+// incurs no extra lookup.
 export const trackExists = async (fileName: string): Promise<boolean> => {
   const tracks = await getAllTracks();
   return tracks.some((track) => track.fileName === fileName);
@@ -43,11 +40,6 @@ export const nicknameExists = async (nickname: string): Promise<boolean> => {
   return rows.length > 0;
 };
 
-/**
- * 닉네임을 내부 식별자로 바꿉니다. 공개 API는 닉네임을 받고 캐시는 userid를
- * 기준으로 두기 위한 다리입니다. 닉네임을 바꾸는 경로가 없어 이 대응은 변하지
- * 않으므로 길게 캐싱해도 안전합니다.
- */
 export const useridOf = async (nickname: string): Promise<string | null> => {
   const rows = await getOrSet(
     "authStatus",

@@ -5,7 +5,6 @@ import { knex } from "./db";
 import { invalidate, invalidateGroup, keys } from "./cache";
 import { setRating } from "./rating-index";
 
-// 기록 저장 계층입니다. 검증을 마친 값만 전달해야 합니다.
 export interface RecordSubmission {
   fileName: string;
   nickname: string;
@@ -19,15 +18,11 @@ export interface RecordSubmission {
   accuracy: number;
 }
 
-/**
- * 현재 1위인 곡(난이도별) 수를 셉니다.
- *
- * 컬럼에 누적하지 않고 조회 때마다 세는 이유는, 1위를 빼앗긴 쪽의 값도 줄어야
- * 하는데 카운터 방식으로는 기록 저장 트랜잭션에서 남의 행까지 잠가야 하기
- * 때문입니다. 동점자는 양쪽 모두 1위로 셉니다(순위표 rank 계산과 같은 기준).
- *
- * (filename, difficulty, isBest, record) 인덱스가 필요합니다. schema/indexes.sql 참고.
- */
+// Counts tracks (per difficulty) this user holds first place on. Computed per
+// lookup rather than kept in a column, since a counter would have to decrement
+// whoever was knocked out of first -- locking someone else's row inside the
+// submission transaction. Ties count for both sides, matching leaderboard rank.
+// Needs the (filename, difficulty, isBest, record) index; see schema/indexes.sql.
 export const countFirstPlaces = async (nickname: string): Promise<number> => {
   const [row] = await knex({ mine: "trackRecords" })
     .where("mine.nickname", nickname)
@@ -45,7 +40,7 @@ export const countFirstPlaces = async (nickname: string): Promise<number> => {
   return Number(row.count);
 };
 
-// medal 비트필드입니다. AP는 FC를, FC는 CLEAR를 포함합니다(7=AP, 3=FC, 1=CLEAR).
+// medal bitfield: AP implies FC, FC implies CLEAR (7=AP, 3=FC, 1=CLEAR).
 const MEDAL_CLEAR = 1;
 const MEDAL_FC = 2;
 const MEDAL_AP = 4;
@@ -55,18 +50,14 @@ const uuid = () => {
   return tokens[2] + tokens[1] + tokens[0] + tokens[3] + tokens[4];
 };
 
-// 기록을 저장하고 관련 캐시를 정리합니다. nickname은 세션에서 확정된 값이어야 합니다.
 export const submitRecord = async (submission: RecordSubmission) => {
-  // 커밋 이후에 캐시를 비우기 위해 갱신된 값을 밖으로 꺼냅니다.
   let updatedUserid: string | null = null;
   let updatedRating = 0;
 
-  // read-modify-write 경쟁을 막기 위해 트랜잭션 + 행 잠금으로 처리합니다.
   await knex.transaction(async (trx) => {
-    // 이 사용자의 기록 저장을 직렬화하는 잠금입니다. 아래 trackRecords의
-    // read-modify-write(isBest·rating 이관)보다 반드시 먼저 잡아야 합니다.
-    // 뒤에서 잡으면 동시 제출 두 건이 같은 "이전 최고 기록"을 읽고 양쪽 모두
-    // isBest=1로 남아, 순위표와 1위 곡 수가 중복 집계됩니다.
+    // Serializes this user's submissions. Must be acquired before the
+    // trackRecords read-modify-write below, or two concurrent submissions read
+    // the same "previous best" and both stay isBest=1, double-counting.
     const user = await trx("users")
       .where("nickname", submission.nickname)
       .select(
@@ -85,7 +76,6 @@ export const submitRecord = async (submission: RecordSubmission) => {
       throw new Error("User not found for record update.");
     }
 
-    // 난이도는 클라이언트 값 대신 tracks 테이블에서 도출합니다.
     let difficultyValue = submission.difficulty;
     const trackRow = await trx("tracks")
       .select("difficulty")
@@ -104,7 +94,7 @@ export const submitRecord = async (submission: RecordSubmission) => {
           difficultyValue = Number(arr[idx]);
         }
       } catch {
-        // 파싱 실패 시 상한 검증을 거친 클라이언트 값을 씁니다.
+        // On parse failure, fall back to the client value (already range-checked).
       }
     }
 
@@ -115,7 +105,7 @@ export const submitRecord = async (submission: RecordSubmission) => {
       .where("filename", submission.fileName)
       .where("isBest", 1)
       .where("difficulty", submission.difficultySelection);
-    // 문자열 컬럼일 때 사전순 비교가 되지 않도록 Number로 맞춥니다.
+    // Cast to Number so a string column doesn't get compared lexicographically.
     if (result.length && Number(result[0].record) < submission.record) {
       isBest = 1;
       await trx("trackRecords")
@@ -169,8 +159,8 @@ export const submitRecord = async (submission: RecordSubmission) => {
       fc = 0,
       clear = 0;
     if (isBest) {
-      // 비트별로 비교해야 합니다. 산술 뺄셈으로는 점수가 오르면서 콤보가
-      // 끊긴 경우(뱃지 감소)에 차분이 음수가 되어 반영되지 않습니다.
+      // Per-bit: arithmetic subtraction goes negative when the score improves
+      // but the combo badge drops.
       const newMedal = submission.medal;
       const oldMedal = result.length ? Number(result[0].medal) : 0;
       const diff = (mask: number) =>
@@ -179,10 +169,8 @@ export const submitRecord = async (submission: RecordSubmission) => {
       fc = diff(MEDAL_FC);
       clear = diff(MEDAL_CLEAR);
     }
-    // 1위 곡 수는 여기서 세지 않습니다. countFirstPlaces가 조회 때 계산합니다.
     updatedUserid = String(user[0].userid);
     updatedRating = Number(user[0].rating) + ratingDiff;
-    // recentPlay가 손상되어도 기록 저장은 실패하지 않아야 합니다.
     let recentPlay: unknown;
     try {
       recentPlay = JSON.parse(user[0].recentPlay);
@@ -215,7 +203,6 @@ export const submitRecord = async (submission: RecordSubmission) => {
       });
   });
 
-  // 방금 남긴 기록이 즉시 보이도록, 커밋 이후에 관련 키를 직접 비웁니다.
   try {
     await invalidate(
       keys.bestRecord(submission.nickname, submission.fileName),
@@ -234,7 +221,6 @@ export const submitRecord = async (submission: RecordSubmission) => {
     );
     if (updatedUserid) await setRating(updatedUserid, updatedRating);
   } catch (e) {
-    // 캐시 정리 실패가 기록 저장 성공을 뒤집지는 않습니다.
     signale.error(e);
   }
 };

@@ -6,7 +6,6 @@ import { knex } from "./db";
 import { getOrSet, invalidate, keys } from "./cache";
 import { parseJson } from "./validate";
 
-// 실시간 알림이므로 짧게 잡습니다.
 const GAME_SERVER_TIMEOUT_MS = 3000;
 
 interface Data {
@@ -39,7 +38,7 @@ const idDB = {
   TOP_1: 14,
 };
 
-//TODO: EZPZ, 미드차이, 이건 좀 무섭네요
+// TODO: EZPZ and MID_GAP achievements aren't implemented yet.
 const achievedIndex = async (context: string, data?: Data) => {
   const index: Array<number> = [];
   switch (context) {
@@ -94,7 +93,6 @@ const achievedIndex = async (context: string, data?: Data) => {
   return index;
 };
 
-// 업적 처리 본체입니다. 예외는 아래 observer가 흡수합니다.
 const runObserver = async (userid: string, context: string, data?: Data) => {
   const userData = await knex("users")
     .select("achievements", "ownedAlias", "banner", "alias")
@@ -107,11 +105,10 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
     parseJson<number[]>(userData[0].achievements) ?? [],
   );
 
-  // Get achievement index array from data. It will be [] if there is no achievement.
   const index: number[] = await achievedIndex(context, data);
 
-  // For RANK context, we need to process all achievements to update aliases,
-  // but only send notifications for new achievements
+  // RANK reprocesses every achievement to keep aliases in sync, but only
+  // notifies for the newly unlocked ones.
   let filteredIndex: number[];
   let newAchievements: number[];
 
@@ -123,13 +120,12 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
     newAchievements = filteredIndex;
   }
 
-  // RANK는 순위에서 밀려났을 때 칭호를 회수해야 하므로, 달성 목록이 비어도
-  // 아래 alias 재조정까지 진행합니다.
+  // RANK reclaims a title when a player drops out, so it reaches the alias
+  // adjustment below even with an empty list.
   if (context !== "RANK" && !filteredIndex.length) return;
 
   const achievementsList: Array<Achievement> = [];
   for (const i of newAchievements) {
-    // Achieved!
     knex("achievements")
       .where("index", i)
       .increment("count")
@@ -152,7 +148,7 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
   const banner = new Set(parseJson<string[]>(userData[0].banner) ?? []);
   let selectedAlias = userData[0].alias;
   if (context === "RANK") {
-    // Rank 관련 alias는 8~11번입니다.
+    // Rank-related aliases are IDs 8-11.
     ownedAlias.delete(8);
     ownedAlias.delete(9);
     ownedAlias.delete(10);
@@ -162,8 +158,8 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
     else if (index.includes(idDB.TOP_50)) ownedAlias.add(9);
     else if (index.includes(idDB.TOP_100)) ownedAlias.add(8);
     if (!ownedAlias.has(selectedAlias)) {
-      // 비어 있으면 pop()이 undefined를 돌려주고 knex가 "Undefined binding"으로
-      // 실패합니다. 기본 칭호(0)로 되돌립니다.
+      // pop() returns undefined on an empty set, which knex would reject with
+      // "Undefined binding" -- fall back to the default title (0).
       selectedAlias = Array.from(ownedAlias).pop() ?? 0;
     }
   }
@@ -175,14 +171,13 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
         const aliasId = Number(reward[1]);
         if (Number.isInteger(aliasId)) ownedAlias.add(aliasId);
       } else if (reward[0] === "reward") {
-        //not yet
+        // Not implemented yet.
       } else if (reward[0] === "banner") {
         if (typeof reward[1] === "string") banner.add(reward[1]);
       }
     }
   }
 
-  // Update user data
   const updated = {
     achievements: JSON.stringify(Array.from(achievements)),
     ownedAlias: JSON.stringify(Array.from(ownedAlias)),
@@ -190,8 +185,6 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
     alias: selectedAlias,
   };
 
-  // 일일 랭크 잡이 전체 사용자에 대해 호출하므로, 변화가 없으면 쓰기와
-  // 캐시 무효화를 건너뜁니다.
   const unchanged =
     updated.achievements ===
       JSON.stringify(parseJson<number[]>(userData[0].achievements) ?? []) &&
@@ -213,7 +206,6 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
     await invalidate(keys.profile(userid), keys.user(userid));
   }
 
-  // Send achievement data to game server only if there are new achievements
   if (achievementsList.length > 0) {
     fetch(`${config.project.game}/emit/achievement`, {
       method: "POST",
@@ -225,8 +217,8 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
         secret: config.project.secretKey,
         achievement: achievementsList,
       }),
-      // node-fetch는 기본 타임아웃이 없어, 게임 서버가 응답하지 않으면
-      // 프로미스가 열린 채 소켓을 점유합니다.
+      // node-fetch has no default timeout: an unresponsive game server would
+      // leave the promise open and the socket held.
       signal: AbortSignal.timeout(GAME_SERVER_TIMEOUT_MS),
     }).catch((err) => {
       signale.error(err);
@@ -234,11 +226,8 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
   }
 };
 
-/**
- * 업적 처리를 호출합니다. 거부된 프로미스를 밖으로 내보내지 않으므로 호출부에서
- * await나 .catch 없이 불러도 안전합니다. 요청 흐름 밖에서 호출되는 함수라
- * 예외가 새어 나가면 unhandledRejection으로 프로세스가 종료됩니다.
- */
+// Never rejects, so callers can skip await/.catch. Runs outside the request
+// flow, where a leaked exception would end the process via unhandledRejection.
 export const observer = async (
   userid: string,
   context: string,

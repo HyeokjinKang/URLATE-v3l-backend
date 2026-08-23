@@ -25,9 +25,6 @@ import {
 
 export const router = express.Router();
 
-// 한 판이 아무리 짧아도 분당 수십 판은 나올 수 없습니다. 기록 제출은 DB 쓰기와
-// 리플레이 파일 생성을 동반하므로, 전역 한도(600/분)만으로는 로그인한 사용자
-// 한 명이 디스크와 DB를 밀어붙일 수 있습니다.
 const playRecordLimiter = rateLimit({
   windowSec: 60,
   max: 30,
@@ -35,9 +32,6 @@ const playRecordLimiter = rateLimit({
 });
 
 router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
-  //doesn't scan the entire record yet
-  //userid, username, rank, score, maxCombo, perfect, great, good, bad, miss, bullet, accuracy, record
-
   const results = await knex("users")
     .select("nickname", "userid")
     .where("userid", req.session.userid);
@@ -54,10 +48,9 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
     return;
   }
 
-  // 신원은 세션에서 확정된 값만 씁니다. 클라이언트가 보낸 userid/username은 무시합니다.
+  // Identity comes only from the session; the userid/username the client sent are ignored.
   const nickname: string = results[0].nickname;
 
-  // 파일 경로와 DB 조회에 쓰이므로 형식을 제한합니다.
   const fileName = req.body.fileName;
   if (!isValidFileName(fileName) || !isValidNickname(nickname)) {
     res
@@ -72,7 +65,6 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
     return;
   }
 
-  // 판정 카운트·점수·콤보는 유한한 비음수 정수만 허용합니다.
   const perfect = toFiniteNonNegInt(req.body.perfect);
   const great = toFiniteNonNegInt(req.body.great);
   const good = toFiniteNonNegInt(req.body.good);
@@ -81,7 +73,6 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
   const bullet = toFiniteNonNegInt(req.body.bullet);
   const score = toFiniteNonNegInt(req.body.score);
   const maxCombo = toFiniteNonNegInt(req.body.maxCombo);
-  // 캐시 그룹 키에도 쓰이므로 범위를 고정합니다.
   const difficultySelection = toDifficultySelection(
     req.body.difficultySelection,
   );
@@ -153,9 +144,8 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
       medal = 7;
     }
   }
-  // 서버가 재계산한 rank/accuracy와 클라이언트 주장을 대조합니다.
-  // score 자체는 여전히 클라이언트 계산값입니다. 완전한 치팅 방지에는 서버측
-  // 리플레이 재생 검증이 필요합니다.
+  // Cross-checks server-recomputed rank/accuracy against the client's claim. The
+  // score itself is still client-computed; stopping that needs replay verification.
   if (rank != req.body.rank || accuracy != Number(req.body.accuracy)) {
     res
       .status(400)
@@ -188,7 +178,6 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
     medal,
   });
   try {
-    // 검증이 끝난 값만 넘깁니다.
     await submitRecord({
       fileName,
       nickname,
@@ -217,7 +206,6 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
 });
 
 router.get("/record/:index", async (req, res) => {
-  // isBest/rating은 이후 플레이로 바뀌므로 짧은 TTL만 적용하고 무효화는 하지 않습니다.
   const index = req.params.index;
   if (!isValidRecordIndex(index)) {
     res
@@ -255,7 +243,6 @@ router.get("/record/:index", async (req, res) => {
   res.status(200).json({ result: "success", results });
 });
 
-// 곡 선택 화면이 트랙 수만큼 호출하던 것을 요청 한 번으로 대체합니다.
 router.get("/trackRecords/:nickname", async (req, res) => {
   const nickname = req.params.nickname;
   if (!isValidNickname(nickname)) {
@@ -286,7 +273,6 @@ router.get("/trackRecords/:nickname", async (req, res) => {
         .where("isBest", 1)
         .orderBy("filename", "asc")
         .orderBy("difficulty", "desc");
-      // /record/:filename/:nickname과 동일하게 난이도 내림차순입니다.
       const grouped: Record<string, Record<string, unknown>[]> = {};
       for (const row of rows) {
         if (!grouped[row.filename]) grouped[row.filename] = [];
@@ -305,7 +291,6 @@ router.get("/trackRecords/:nickname", async (req, res) => {
   res.status(200).json({ result: "success", records });
 });
 
-// recentPlay의 id마다 /record/:index를 호출하던 것을 요청 한 번으로 대체합니다.
 const loadRecentPlays = (uid: string) =>
   getOrSet("record", keys.recentPlays(uid), async () => {
     const users = await knex("users").select("recentPlay").where("userid", uid);
@@ -331,7 +316,7 @@ const loadRecentPlays = (uid: string) =>
         "rating",
       )
       .whereIn("index", indexes);
-    // whereIn이 흐트러뜨린 순서를 recentPlay의 최신순으로 되돌립니다.
+    // whereIn doesn't preserve order, so restore recentPlay's most-recent-first order.
     const byIndex = new Map(rows.map((row) => [row.index, row]));
     return indexes
       .map((index) => byIndex.get(index))
@@ -353,7 +338,6 @@ const respondRecentPlays = (
   res.status(200).json({ result: "success", results });
 };
 
-// 공개 프로필은 닉네임으로 조회합니다(/profile/nickname/:nickname과 같은 이유).
 router.get("/recentPlays/nickname/:nickname", async (req, res) => {
   const nickname = req.params.nickname;
   if (!isValidNickname(nickname)) {
@@ -379,7 +363,7 @@ router.get("/recentPlays/:uid", async (req, res) => {
 });
 
 router.get("/record/:filename/:nickname", async (req, res) => {
-  // 곡 선택 화면은 /trackRecords/:nickname을 쓰지만 기존 클라이언트를 위해 유지합니다.
+  // The track-select screen uses /trackRecords/:nickname now; kept for older clients.
   const { filename, nickname } = req.params;
   if (!isValidFileName(filename) || !isValidNickname(nickname)) {
     res
@@ -393,7 +377,7 @@ router.get("/record/:filename/:nickname", async (req, res) => {
       );
     return;
   }
-  // 빈 결과까지 캐싱하는 경로이므로 실재 여부를 먼저 확인합니다.
+  // This path caches even an empty result, so check existence first.
   if (!(await trackExists(filename)) || !(await nicknameExists(nickname))) {
     notFound(res, "Cannot find track or user.");
     return;
@@ -408,7 +392,6 @@ router.get("/record/:filename/:nickname", async (req, res) => {
         .where("filename", filename)
         .where("isBest", 1)
         .orderBy("difficulty", "DESC"),
-    // 미플레이 곡의 빈 결과도 캐싱합니다. 곡 선택 화면에서는 이쪽이 다수입니다.
   );
   if (!results.length) {
     res.status(200).json(createSuccessResponse("empty"));
@@ -448,7 +431,6 @@ router.get("/bestRecords/:nickname", async (req, res) => {
       .whereNot("rating", 0)
       .orderBy("difficulty", "desc")
       .orderBy("rating", "desc")
-      // 응답은 10건만 쓰므로 DB에서부터 잘라 옵니다.
       .limit(10),
   );
   res.status(200).json({ result: "success", results });
@@ -474,7 +456,6 @@ router.get(
     }
 
     const { fileName, nickname } = req.params;
-    // 캐시 키를 이루는 파라미터이므로 형식을 고정합니다.
     const difficulty = toDifficultySelection(req.params.difficulty);
     if (
       difficulty === null ||
@@ -497,7 +478,6 @@ router.get(
       return;
     }
 
-    // 같은 곡·난이도의 기록이 갱신되면 함께 비워야 하므로 한 그룹으로 묶습니다.
     const group = keys.leaderboardGroup(fileName, difficulty);
 
     const results = await getOrSet(
@@ -514,8 +494,6 @@ router.get(
       { group },
     );
 
-    // 자신보다 앞선 인원 수로 순위를 계산합니다. 기록이 없으면 null을 돌려
-    // 캐시에 남기지 않습니다(없는 닉네임으로 키가 늘어나는 것을 막습니다).
     const rank = await getOrSet(
       "leaderboard",
       keys.leaderboardRank(fileName, difficulty, order, sort, nickname),
@@ -539,7 +517,7 @@ router.get(
       },
       { group },
     );
-    // 기록이 없을 때의 응답값 0은 기존 클라이언트와 동일하게 유지합니다.
+    // 0 for a missing record, matching the response older clients expect.
     res.status(200).json({ result: "success", results, rank: rank ?? 0 });
   },
 );

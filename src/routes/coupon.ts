@@ -15,7 +15,6 @@ router.put(
   rateLimit({ windowSec: 300, max: 30, prefix: "coupon" }),
   requireLogin,
   async (req, res) => {
-    // 검증 실패를 트랜잭션 롤백과 함께 전달하기 위한 타입입니다.
     class CouponError extends Error {
       constructor(
         public error: string,
@@ -26,7 +25,7 @@ router.put(
     }
 
     const userid = req.session.userid as string;
-    // 객체/배열이 들어오면 knex가 의도치 않은 조회 조건을 만듭니다.
+    // An object/array here would let knex build an unintended query condition.
     const code = req.body.code;
     if (typeof code !== "string" || !code.length || code.length > 64) {
       res
@@ -37,7 +36,6 @@ router.put(
       return;
     }
     try {
-      // 같은 코드의 동시 사용을 직렬화하기 위해 트랜잭션 + 행 잠금으로 처리합니다.
       await knex.transaction(async (trx) => {
         const couponArr = await trx("codes")
           .select("reward", "used", "usedUser")
@@ -53,7 +51,6 @@ router.put(
             "The code sent has already been used.",
           );
         }
-        // usedUser는 NULL이거나 "null"일 수 있습니다.
         const parsedUsedUser = parseJson(coupon.usedUser);
         const usedUser: string[] = Array.isArray(parsedUsedUser)
           ? parsedUsedUser
@@ -69,7 +66,6 @@ router.put(
           content?: string;
           nolimit?: boolean;
         }>(coupon.reward);
-        // 보상 정의가 깨져 있으면 명확한 오류로 끝냅니다.
         if (!reward || typeof reward !== "object") {
           throw new CouponError("Invalid code", "Invalid code sent.");
         }
@@ -104,7 +100,6 @@ router.put(
             .where("code", code);
         }
       });
-      // 스킨 지급이 곧바로 반영되도록 본인 정보 캐시를 비웁니다.
       await invalidate(keys.user(userid), keys.profile(userid));
     } catch (e) {
       if (e instanceof CouponError) {
