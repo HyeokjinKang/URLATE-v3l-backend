@@ -19,8 +19,7 @@ export const router = express.Router();
 router.get("/user", requireLogin, async (req, res) => {
   const userid = req.session.userid as string;
 
-  // This is the caller's own data, so the key includes userid to prevent
-  // cross-exposure between users.
+  // Keyed by userid to prevent cross-exposure between users.
   const results = await getOrSet(
     "user",
     keys.user(userid),
@@ -119,15 +118,9 @@ const respondProfile = async (
   res.status(200).json({ result: "success", user: results[0], rank });
 };
 
-/**
- * Public profile lookup by nickname. This is the path the leaderboard uses,
- * so viewing someone else's profile doesn't require knowing their internal
- * identifier (userid).
- *
- * Resolves the nickname to a userid and reuses the same cache entry as
- * /profile/:uid below. A separate key would mean every path that
- * invalidates a profile has to clear both.
- */
+// Public profile by nickname, so the leaderboard can link to a profile without
+// exposing the internal userid. Reuses /profile/:uid's cache entry; a separate
+// key would force every profile-invalidating path to clear both.
 router.get("/profile/nickname/:nickname", async (req, res) => {
   const nickname = req.params.nickname;
   if (!isValidNickname(nickname)) {
@@ -174,8 +167,7 @@ router.get("/profilePic/:username", async (req, res) => {
 
 router.put("/settings", requireLogin, async (req, res) => {
   const userid = req.session.userid as string;
-  // Normalized against the default settings as a schema; unknown keys and type
-  // mismatches are dropped.
+  // Normalized against the default settings as a schema; unknown keys dropped.
   if (req.body.settings === undefined || req.body.settings === null) {
     res
       .status(400)
@@ -232,9 +224,8 @@ router.put("/profile/:element", async (req, res) => {
     return;
   }
 
-  // Identity and trust level are resolved once, before branching. Re-checking
-  // inside each branch risks an authorization bypass for any branch that
-  // forgets to.
+  // Resolved once before branching; per-branch checks risk a bypass in any
+  // branch that forgets one.
   const hasValidSecret = isValidSecret(req.body.secret);
   const isService = hasValidSecret && typeof req.body.userid === "string";
   const userid: string | undefined = req.session.userid

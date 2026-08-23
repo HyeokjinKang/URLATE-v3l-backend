@@ -12,9 +12,8 @@ const DEFAULT_RETENTION_DAYS = 14;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-// Size cap for a single replay. A play's judgement array has a predictable
-// size, so without a cap it would get written to disk as large as the body
-// limit (512KB) allows.
+// Size cap for a single replay. A judgement array has a predictable size;
+// without this, anything up to the body limit (512KB) lands on disk.
 const MAX_RECORD_CHARS = 64 * 1024;
 
 export const logsRoot = path.resolve(__dirname, "../logs");
@@ -31,11 +30,8 @@ export const retentionDays = (): number => {
   return DEFAULT_RETENTION_DAYS;
 };
 
-/**
- * Writes a replay log. Returns false if the resolved path escapes the log
- * root. nickname and fileName must already be format-validated by the
- * caller; this re-checks as a second layer against path traversal.
- */
+// Returns false if the resolved path escapes the log root. The caller already
+// format-validates nickname and fileName; this is a second layer.
 export const writeReplayLog = (
   nickname: string,
   fileName: string,
@@ -62,10 +58,8 @@ export const writeReplayLog = (
   return true;
 };
 
-/**
- * Removes logs past their retention period and any directories left empty.
- * Walks file by file, so memory use stays constant regardless of log count.
- */
+// Removes expired logs and any directories left empty. Walks file by file, so
+// memory use stays constant regardless of log count.
 export const cleanupReplayLogs = async () => {
   const days = retentionDays();
   const cutoff = Date.now() - days * MS_PER_DAY;

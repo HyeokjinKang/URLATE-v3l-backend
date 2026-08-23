@@ -52,8 +52,8 @@ const isUsable = (): boolean => cacheEnabled && isRedisReady();
 const isSafeKeySegment = (value: string): boolean =>
   /^[A-Za-z0-9_.-]{1,128}$/.test(value);
 
-// Normalizes user input into a cache-key segment. Unsafe input is replaced with
-// a fixed-length hash to prevent delimiter (:) injection and unbounded key length.
+// Unsafe input becomes a fixed-length hash, preventing delimiter (:) injection
+// and unbounded key length.
 export const safeSegment = (value: string | number): string => {
   const str = String(value);
   return isSafeKeySegment(str)
@@ -105,9 +105,8 @@ export const keys = {
 interface GetOrSetOptions {
   // If set, registers the key in a group that invalidateGroup can clear at once.
   group?: string;
-  // When false, an empty result isn't cached. Use this where a "not found" lookup
-  // could poison the cache; leave it on where an empty result is normal, like an
-  // unplayed track.
+  // When false, an empty result isn't cached. Turn it off where a "not found"
+  // could poison the cache, on where empty is normal (e.g. an unplayed track).
   cacheEmpty?: boolean;
 }
 
@@ -120,12 +119,9 @@ const FILL_WAIT_INTERVAL_MS = 30;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * Cache-aside lookup. Falls back to the DB if Redis is down or errors.
- *
- * On a miss, only the request that holds the lock queries the DB; the rest wait
- * briefly. This prevents a thundering herd when a hot key expires.
- */
+// Cache-aside lookup; falls back to the DB if Redis is down. On a miss, only the
+// lock holder queries the DB and the rest wait briefly, preventing a thundering
+// herd when a hot key expires.
 export const getOrSet = async <T>(
   kind: CacheKind,
   key: string,
@@ -166,8 +162,7 @@ export const getOrSet = async <T>(
         // Not filled in time; query it directly.
       }
     } catch (err) {
-      // Only Redis errors reach here -- kept narrow so a fetcher error still
-      // propagates instead of being swallowed by this catch.
+      // Kept narrow so a fetcher error still propagates instead of being swallowed.
       signale.error(err);
       return await fetcher();
     }
@@ -213,8 +208,7 @@ export const invalidate = async (...keys: (string | null | undefined)[]) => {
   }
 };
 
-// Deletes every key registered in a group at once, clearing a cache that's split
-// into many variants (e.g. by sort order) without a KEYS/SCAN.
+// Clears a cache split into many variants (e.g. by sort order) without KEYS/SCAN.
 export const invalidateGroup = async (group: string) => {
   if (!isUsable()) return;
   const groupKey = GROUP_PREFIX + group;

@@ -4,15 +4,12 @@ import signale from "signale";
 import { createErrorResponse } from "../api-response";
 import config from "../config";
 
-/**
- * CSRF defense. SameSite=lax still sends cookies between sites that share a
- * parent domain, so this adds a layer that checks Origin (falling back to
- * Referer) against an allowlist.
- *
- * A request with neither is let through. Browsers always attach Origin on a
- * state-changing request, so this case is a server-to-server call, and that
- * path is authenticated with the project secret instead.
- */
+// SameSite=lax still sends cookies between sites sharing a parent domain, so
+// Origin (falling back to Referer) is checked against an allowlist.
+//
+// A request with neither is let through: browsers always attach Origin on a
+// state-changing request, so that case is a server-to-server call, which
+// authenticates with the project secret instead.
 const CSRF_SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 const ALLOWED_ORIGINS = new Set(

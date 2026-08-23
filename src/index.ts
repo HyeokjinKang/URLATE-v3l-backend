@@ -21,9 +21,8 @@ process.on("uncaughtException", (err) => {
   process.exit(1);
 });
 
-// Cap on how long to wait for Redis to connect. node-redis retries forever,
-// so awaiting it directly would keep the port from ever opening while Redis
-// is down.
+// node-redis retries forever, so awaiting it directly would keep the port from
+// ever opening while Redis is down.
 const REDIS_CONNECT_TIMEOUT_MS = 5000;
 
 const closeRedis = async () => {
@@ -80,9 +79,8 @@ const start = async () => {
     signale.success(`API Server running at ${host}:${config.project.port}.`);
   });
 
-  // Drains in-flight requests and cleans up resources on deploy/restart.
-  // Exiting without this would leave uncommitted transactions holding locks
-  // until the DB times them out.
+  // Drains in-flight requests on deploy/restart; exiting without this leaves
+  // uncommitted transactions holding locks until the DB times them out.
   let shuttingDown = false;
   const shutdown = async (signal: string) => {
     if (shuttingDown) return;

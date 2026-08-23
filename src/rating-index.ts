@@ -54,19 +54,15 @@ export const rebuild = async (rows: RatingRow[]) => {
   }
 };
 
-/**
- * Counts users with a higher rating than the one given. Equivalent to
- * COUNT(*) WHERE rating > ?, including tie handling. Returns null if the
- * index is empty or on error, letting the caller fall back to the DB.
- */
+// Equivalent to COUNT(*) WHERE rating > ?, ties included. Returns null if the
+// index is empty or on error, letting the caller fall back to the DB.
 export const countHigherRating = async (
   rating: number,
 ): Promise<number | null> => {
   if (!isRedisReady() || !Number.isFinite(rating)) return null;
   try {
-    // ZCOUNT alone can't distinguish "index is empty" from "rank 1", so ZCARD
-    // is needed alongside it. Issued together so node-redis pipelines them
-    // into a single round trip.
+    // ZCOUNT alone can't tell "index is empty" from "rank 1". Issued together
+    // so node-redis pipelines them into one round trip.
     const [size, higher] = await Promise.all([
       redisClient.zCard(RATING_KEY),
       redisClient.zCount(RATING_KEY, `(${rating}`, "+inf"),

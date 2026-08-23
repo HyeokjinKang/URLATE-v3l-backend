@@ -23,9 +23,8 @@ export const errorHandler = (
 ) => {
   signale.error(err);
   if (res.headersSent) return;
-  // Preserves the 4xx that body-parser attaches (malformed JSON 400, oversized
-  // body 413). Collapsing everything to 500 would hide whether the request was
-  // bad or the server broke.
+  // Preserves body-parser's 4xx (malformed JSON 400, oversized body 413);
+  // collapsing to 500 would hide whether the request or the server was at fault.
   const status =
     (err as { status?: number; statusCode?: number } | null)?.status ??
     (err as { statusCode?: number } | null)?.statusCode;

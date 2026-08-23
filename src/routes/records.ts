@@ -25,9 +25,9 @@ import {
 
 export const router = express.Router();
 
-// Even the shortest play can't yield dozens of runs a minute. Record submission
-// involves a DB write and a replay file, so the global limit (600/min) alone
-// would let one signed-in user hammer the disk and DB.
+// No real play yields dozens of runs a minute, and each submission costs a DB
+// write plus a replay file -- the global limit (600/min) alone would let one
+// signed-in user hammer both.
 const playRecordLimiter = rateLimit({
   windowSec: 60,
   max: 30,
@@ -150,9 +150,8 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
       medal = 7;
     }
   }
-  // Cross-checks the server-recomputed rank/accuracy against the client's claim.
-  // The score itself is still client-computed; fully preventing cheating would
-  // need server-side replay verification.
+  // Cross-checks server-recomputed rank/accuracy against the client's claim. The
+  // score itself is still client-computed; stopping that needs replay verification.
   if (rank != req.body.rank || accuracy != Number(req.body.accuracy)) {
     res
       .status(400)
@@ -213,8 +212,7 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
 });
 
 router.get("/record/:index", async (req, res) => {
-  // isBest/rating can change with a later play, so this only gets a short TTL and
-  // is never explicitly invalidated.
+  // isBest/rating can change with a later play, so short TTL, never invalidated.
   const index = req.params.index;
   if (!isValidRecordIndex(index)) {
     res
@@ -513,8 +511,8 @@ router.get(
       { group },
     );
 
-    // Rank is the count of players ahead. Returns null (and skips caching) when
-    // there's no record, so a nonexistent nickname doesn't grow the key space.
+    // Count of players ahead. Null (and uncached) when there's no record, so a
+    // nonexistent nickname doesn't grow the key space.
     const rank = await getOrSet(
       "leaderboard",
       keys.leaderboardRank(fileName, difficulty, order, sort, nickname),

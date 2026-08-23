@@ -34,26 +34,19 @@ const gidVerify = async (token: string, clientId: string) => {
   return ticket.getPayload();
 };
 
-/**
- * Syncs the stored email to whatever Google just handed back at login.
- *
- * Google lets an account's primary email change, so the stored address can
- * go stale. The account identifier sub stays fixed across that change, so
- * updates are keyed on it.
- *
- * Unverified addresses are never applied. Google includes addresses whose
- * ownership hasn't been confirmed in the payload too, and storing one as-is
- * would let someone else's address get attached to this account.
- *
- * A sync failure never blocks login. Login is decided by sub alone; email is
- * secondary and will simply resync on the next login.
- */
+// Syncs the stored email to what Google returned at login. A primary email can
+// change, so updates are keyed on sub, which stays fixed.
+//
+// Unverified addresses are never applied: Google includes addresses whose
+// ownership isn't confirmed, and storing one would attach someone else's
+// address to this account. A failure here never blocks login -- login is
+// decided by sub alone, and email resyncs next time.
 const syncEmail = async (payload: TokenPayload) => {
   if (!payload.sub || !payload.email || payload.email_verified !== true) return;
 
   try {
-    // <=> is a NULL-safe comparison. Plain <> would never be true when the
-    // stored value is NULL, so an account with no email would never sync.
+    // <=> is NULL-safe; plain <> would never match a stored NULL, so an account
+    // with no email would never sync.
     const changed = await knex("users")
       .where("userid", payload.sub)
       .whereRaw("NOT (email <=> ?)", [payload.email])
@@ -188,9 +181,8 @@ router.post("/auth/join", async (req, res) => {
     return;
   }
 
-  // Without the string check, RegExp.test would coerce the argument to a
-  // string -- omitting displayName entirely becomes "undefined" (9
-  // alphanumeric chars) and passes.
+  // Without the string check, RegExp.test coerces its argument: omitting
+  // displayName becomes "undefined", 9 alphanumeric chars, and passes.
   const displayName = req.body.displayName;
   if (!isValidNickname(displayName)) {
     res
@@ -323,12 +315,9 @@ router.post("/auth/logout", (req, res) => {
   });
 });
 
-/**
- * Logs out via top-level navigation and returns to the frontend.
- * GET means csrfGuard doesn't cover this, so the origin is checked directly.
- * Without this check, an <img src="...auth/logout"> alone could end someone
- * else's session.
- */
+// Logs out via top-level navigation and returns to the frontend. csrfGuard
+// doesn't cover GET, so the origin is checked directly -- otherwise an
+// <img src="...auth/logout"> alone could end someone else's session.
 router.get("/auth/logout", (req, res) => {
   if (!isAllowedOrigin(requestOrigin(req))) {
     forbiddenOrigin(res);

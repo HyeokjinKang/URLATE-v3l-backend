@@ -5,16 +5,10 @@ import { isRedisReady, redisClient } from "./redis";
 // Kept under 24 hours so the lock always expires before the next run.
 const DEFAULT_TTL_SEC = 23 * 60 * 60;
 
-/**
- * Claims the right to run a once-daily job for today. Only the caller that
- * wins the lock gets true back.
- *
- * node-schedule runs independently per process, so under PM2 cluster mode
- * the same job would fire once per instance.
- *
- * Returns true if Redis is unavailable. Better to accept the risk of a
- * duplicate run than have the job not run at all.
- */
+// Claims today's run of a once-daily job; only the lock winner gets true.
+// node-schedule runs per process, so PM2 cluster mode would otherwise fire the
+// job once per instance. Returns true if Redis is unavailable -- a duplicate
+// run beats no run at all.
 export const acquireDailyJobLock = async (
   jobName: string,
   ttlSec: number = DEFAULT_TTL_SEC,

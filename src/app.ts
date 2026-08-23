@@ -21,21 +21,18 @@ app.locals.pretty = true;
 // Avoid exposing the framework/version.
 app.disable("x-powered-by");
 
-// The proxy in front terminates HTTPS, so X-Forwarded-Proto has to be
-// trusted for secure cookies to work, and req.ip (used by rate limiting)
-// comes from X-Forwarded-For too.
+// The proxy terminates HTTPS, so X-Forwarded-Proto must be trusted for secure
+// cookies, and req.ip (used by rate limiting) comes from X-Forwarded-For.
 //
-// This value must exactly match the real hop count. Express takes req.ip
-// from X-Forwarded-For by skipping this many addresses from the end. The
-// frontend sits behind CDN + reverse proxy, 2 hops (config.project.trustProxy).
-// Setting this to 1 would pin req.ip to the CDN's address, and every user
-// would share a single rate-limit bucket.
+// Must exactly match the real hop count -- Express takes req.ip by skipping
+// this many addresses from the end of X-Forwarded-For. Deployment is CDN +
+// reverse proxy, 2 hops; setting 1 would pin req.ip to the CDN and put every
+// user in one rate-limit bucket.
 app.set("trust proxy", config.project.trustProxy ?? 2);
 
 app.use(securityHeaders);
 
-// Placed early so a request that's about to be blocked doesn't pay for
-// session lookup and body parsing first.
+// Early, so a request about to be blocked skips session lookup and body parsing.
 app.use(rateLimit({ windowSec: 60, max: 600, prefix: "global" }));
 
 app.use(sessionMiddleware);

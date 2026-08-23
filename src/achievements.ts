@@ -122,8 +122,8 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
     newAchievements = filteredIndex;
   }
 
-  // RANK must reclaim a title when a player drops out of the ranking, so it
-  // proceeds to the alias adjustment below even with an empty achievement list.
+  // RANK reclaims a title when a player drops out, so it reaches the alias
+  // adjustment below even with an empty list.
   if (context !== "RANK" && !filteredIndex.length) return;
 
   const achievementsList: Array<Achievement> = [];
@@ -230,11 +230,8 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
   }
 };
 
-/**
- * Runs achievement processing. Never rejects, so callers can invoke this without
- * await or .catch. This runs outside the request flow, and a leaked exception
- * here would end the process via unhandledRejection.
- */
+// Never rejects, so callers can skip await/.catch. Runs outside the request
+// flow, where a leaked exception would end the process via unhandledRejection.
 export const observer = async (
   userid: string,
   context: string,

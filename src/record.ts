@@ -19,18 +19,11 @@ export interface RecordSubmission {
   accuracy: number;
 }
 
-/**
- * Counts how many tracks (per difficulty) this user currently holds first
- * place on.
- *
- * Computed on each lookup rather than kept in a column, because a counter
- * would also need to decrement whoever just got knocked out of first --
- * which means locking someone else's row inside the record-submission
- * transaction. Ties count as first place for both sides, matching how the
- * leaderboard's rank is calculated.
- *
- * Needs the (filename, difficulty, isBest, record) index; see schema/indexes.sql.
- */
+// Counts tracks (per difficulty) this user holds first place on. Computed per
+// lookup rather than kept in a column, since a counter would have to decrement
+// whoever was knocked out of first -- locking someone else's row inside the
+// submission transaction. Ties count for both sides, matching leaderboard rank.
+// Needs the (filename, difficulty, isBest, record) index; see schema/indexes.sql.
 export const countFirstPlaces = async (nickname: string): Promise<number> => {
   const [row] = await knex({ mine: "trackRecords" })
     .where("mine.nickname", nickname)
@@ -67,11 +60,9 @@ export const submitRecord = async (submission: RecordSubmission) => {
 
   // Transaction + row lock to prevent a read-modify-write race.
   await knex.transaction(async (trx) => {
-    // Serializes record submissions for this user. Must be acquired before
-    // the trackRecords read-modify-write below (isBest / rating handoff).
-    // Acquiring it later would let two concurrent submissions both read the
-    // same "previous best" and both end up isBest=1, double-counting the
-    // leaderboard and the first-place count.
+    // Serializes this user's submissions. Must be acquired before the
+    // trackRecords read-modify-write below, or two concurrent submissions read
+    // the same "previous best" and both stay isBest=1, double-counting.
     const user = await trx("users")
       .where("nickname", submission.nickname)
       .select(
@@ -174,8 +165,8 @@ export const submitRecord = async (submission: RecordSubmission) => {
       fc = 0,
       clear = 0;
     if (isBest) {
-      // Must compare per-bit. A plain arithmetic subtraction would go negative
-      // (and get dropped) when the score improves but the combo badge drops.
+      // Per-bit: arithmetic subtraction goes negative when the score improves
+      // but the combo badge drops.
       const newMedal = submission.medal;
       const oldMedal = result.length ? Number(result[0].medal) : 0;
       const diff = (mask: number) =>

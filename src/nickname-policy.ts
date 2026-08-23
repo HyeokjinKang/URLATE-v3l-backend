@@ -1,28 +1,15 @@
-// Filters nicknames that are well-formed but unusable (a stage after isValidNickname passes).
+// Filters nicknames that are well-formed but unusable (runs after isValidNickname).
 //
-// The two lists use different matching rules.
-//   RESERVED  — blocked only on an exact match after normalization. For names
-//               that are a problem by themselves, like impersonation or
-//               reserved words. Blocking on substring would catch a legitimate
-//               name like badminton on admin.
-//   PROFANITY — blocked if it appears anywhere in the normalized string.
-//               Profanity can be evaded by padding either side (shibal123,
-//               xxfuckxx), so exact match is pointless here.
+//   RESERVED  — exact match only. Substring would catch badminton on admin.
+//   PROFANITY — substring, since padding evades exact match (shibal123, xxfuckxx).
 //
-// PROFANITY only holds words of 4+ characters that rarely appear inside other
-// words. Shorter fragments like ass or cum would also catch classic or document.
-// False positives still slip through (e.g. shiitake); before adding an entry,
-// check that the string doesn't sit inside an ordinary word.
+// PROFANITY holds only 4+ character words that rarely appear inside others;
+// shorter fragments like ass or cum would catch classic or document. Before
+// adding an entry, check it doesn't sit inside an ordinary word.
 
-/**
- * Normalizes a name before comparison: lowercases it and reverses separators
- * and common leet substitutions, so adm1n, _admin_ and a-d-m-i-n all collapse
- * to admin.
- *
- * Normalization can shorten a string (n_u_l_l -> null), so the lists must
- * include entries under 5 characters too -- independent of the nickname's own
- * length limit.
- */
+// Lowercases and reverses separators and leet substitutions, so adm1n, _admin_
+// and a-d-m-i-n all collapse to admin. This can shorten a string (n_u_l_l ->
+// null), so the lists need entries under 5 characters too.
 const normalize = (value: string): string =>
   value
     .toLowerCase()
@@ -124,25 +111,14 @@ const PROFANITY = [
   "jiral",
 ].map(normalize);
 
-/**
- * Ordinary strings that happen to contain a PROFANITY entry; stripped out before
- * the check runs.
- *
- * Substring matching has no notion of syllable boundaries, so shi + ta/to --
- * common in romanized Japanese and Korean -- reads as shit (ashita, yoshito,
- * ishita, shiitake, ...). Stripping these here lets those names through, at the
- * cost of also letting through a deliberate evasion like shitaaa. The filter is
- * a courtesy, not a security control, so letting a legitimate name through beats
- * blocking one by mistake.
- *
- * Most false-positive reports can be fixed by adding one line here.
- */
+// Ordinary strings containing a PROFANITY entry, stripped before the check.
+// Substring matching ignores syllable boundaries, so shi + ta/to (common in
+// romanized Japanese and Korean) reads as shit: ashita, yoshito, shiitake.
+// This also lets through a deliberate shitaaa, but the filter is a courtesy
+// rather than a security control. Most false positives are one line here.
 const ALLOWED = ["shita", "shito"].map(normalize);
 
-/**
- * True if the nickname is unusable. Not applied to users who already signed up
- * (there's no rename path, so this only needs to run at signup).
- */
+// Only runs at signup; there's no rename path.
 export const isBlockedNickname = (nickname: string): boolean => {
   const normalized = normalize(nickname);
   if (RESERVED.has(normalized)) return true;
