@@ -2,7 +2,6 @@ import signale from "signale";
 
 import { isRedisReady, redisClient } from "./redis";
 
-// Kept under 24 hours so the lock always expires before the next run.
 const DEFAULT_TTL_SEC = 23 * 60 * 60;
 
 // Claims today's run of a once-daily job; only the lock winner gets true.

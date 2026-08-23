@@ -52,7 +52,6 @@ const syncEmail = async (payload: TokenPayload) => {
       .whereRaw("NOT (email <=> ?)", [payload.email])
       .update({ email: payload.email });
 
-    // The address itself isn't logged; no reason for it to leak into logs.
     if (changed > 0) signale.info(`Email updated : ${payload.sub}`);
   } catch (err) {
     signale.error(err);
@@ -66,7 +65,6 @@ router.get("/auth/status", async (req, res) => {
     return;
   }
 
-  // Registration status only ever flips false -> true, so it's safe to cache for a long time.
   const registered = await getOrSet(
     "authStatus",
     keys.authStatus(userid),
@@ -104,7 +102,6 @@ router.post(
           );
         return;
       }
-      // audience is pinned to the server config value; the client-supplied clientId isn't trusted.
       const payload = await gidVerify(
         req.body.jwt.credential,
         config.google.clientId,
@@ -181,8 +178,6 @@ router.post("/auth/join", async (req, res) => {
     return;
   }
 
-  // Without the string check, RegExp.test coerces its argument: omitting
-  // displayName becomes "undefined", 9 alphanumeric chars, and passes.
   const displayName = req.body.displayName;
   if (!isValidNickname(displayName)) {
     res
@@ -193,16 +188,16 @@ router.post("/auth/join", async (req, res) => {
     return;
   }
 
-  // Well-formed but unusable (reserved words, profanity).
   if (isBlockedNickname(displayName)) {
-    res.status(400).json(
-      createErrorResponse(
-        "failed",
-        // Doesn't reveal which list the name matched.
-        "Reserved Name",
-        "The name sent cannot be used.",
-      ),
-    );
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Reserved Name",
+          "The name sent cannot be used.",
+        ),
+      );
     return;
   }
 
@@ -269,7 +264,6 @@ router.post("/auth/join", async (req, res) => {
       }
       throw err;
     }
-    // Invalidate so the account shows as registered immediately.
     await invalidate(keys.authStatus(req.session.userid));
     await setRating(req.session.userid, 0);
     delete req.session.tempName;
@@ -289,7 +283,6 @@ router.post("/auth/join", async (req, res) => {
   }
 });
 
-// Removes the session from the store and clears the cookie.
 const destroySession = (
   req: express.Request,
   res: express.Response,
@@ -308,7 +301,6 @@ const destroySession = (
   });
 };
 
-// Preferred route; POST means csrfGuard covers it.
 router.post("/auth/logout", (req, res) => {
   destroySession(req, res, () => {
     res.status(200).json(createSuccessResponse("success"));

@@ -4,7 +4,6 @@ import signale from "signale";
 import { createErrorResponse } from "../api-response";
 import { isRedisReady, redisClient } from "../redis";
 
-// Backed by Redis, so the counter is shared even when running multiple instances.
 export const rateLimit =
   (options: { windowSec: number; max: number; prefix: string }) =>
   async (
@@ -12,7 +11,6 @@ export const rateLimit =
     res: express.Response,
     next: express.NextFunction,
   ) => {
-    // Check first, since every command would throw while disconnected.
     if (!isRedisReady()) {
       next();
       return;

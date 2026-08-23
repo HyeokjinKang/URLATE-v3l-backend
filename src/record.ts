@@ -5,7 +5,6 @@ import { knex } from "./db";
 import { invalidate, invalidateGroup, keys } from "./cache";
 import { setRating } from "./rating-index";
 
-// Record persistence layer. Only pass in values that have already been validated.
 export interface RecordSubmission {
   fileName: string;
   nickname: string;
@@ -51,14 +50,10 @@ const uuid = () => {
   return tokens[2] + tokens[1] + tokens[0] + tokens[3] + tokens[4];
 };
 
-// Saves a record and invalidates the related caches. nickname must be the
-// value already resolved from the session.
 export const submitRecord = async (submission: RecordSubmission) => {
-  // Pulled out of the transaction so the cache can be cleared after commit.
   let updatedUserid: string | null = null;
   let updatedRating = 0;
 
-  // Transaction + row lock to prevent a read-modify-write race.
   await knex.transaction(async (trx) => {
     // Serializes this user's submissions. Must be acquired before the
     // trackRecords read-modify-write below, or two concurrent submissions read
@@ -81,7 +76,6 @@ export const submitRecord = async (submission: RecordSubmission) => {
       throw new Error("User not found for record update.");
     }
 
-    // Derive difficulty from the tracks table instead of trusting the client value.
     let difficultyValue = submission.difficulty;
     const trackRow = await trx("tracks")
       .select("difficulty")
@@ -175,10 +169,8 @@ export const submitRecord = async (submission: RecordSubmission) => {
       fc = diff(MEDAL_FC);
       clear = diff(MEDAL_CLEAR);
     }
-    // First-place count isn't tracked here; countFirstPlaces computes it on read.
     updatedUserid = String(user[0].userid);
     updatedRating = Number(user[0].rating) + ratingDiff;
-    // A corrupted recentPlay shouldn't fail the record submission.
     let recentPlay: unknown;
     try {
       recentPlay = JSON.parse(user[0].recentPlay);
@@ -211,7 +203,6 @@ export const submitRecord = async (submission: RecordSubmission) => {
       });
   });
 
-  // Clear the related keys right after commit so the new record shows up immediately.
   try {
     await invalidate(
       keys.bestRecord(submission.nickname, submission.fileName),
@@ -230,7 +221,6 @@ export const submitRecord = async (submission: RecordSubmission) => {
     );
     if (updatedUserid) await setRating(updatedUserid, updatedRating);
   } catch (e) {
-    // A cache cleanup failure shouldn't undo a successful record submission.
     signale.error(e);
   }
 };

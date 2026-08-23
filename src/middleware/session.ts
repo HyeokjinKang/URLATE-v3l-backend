@@ -9,7 +9,6 @@ const redisStore = new RedisStore({
   prefix: "urlate:",
 });
 
-// secure cookies are disabled only in test mode, for local HTTP development.
 export const isProduction = config.project.mode !== "test";
 
 export const sessionMiddleware = session({

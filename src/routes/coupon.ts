@@ -15,7 +15,6 @@ router.put(
   rateLimit({ windowSec: 300, max: 30, prefix: "coupon" }),
   requireLogin,
   async (req, res) => {
-    // Carries a validation failure out alongside the transaction rollback.
     class CouponError extends Error {
       constructor(
         public error: string,
@@ -37,7 +36,6 @@ router.put(
       return;
     }
     try {
-      // Transaction + row lock to serialize concurrent uses of the same code.
       await knex.transaction(async (trx) => {
         const couponArr = await trx("codes")
           .select("reward", "used", "usedUser")
@@ -53,7 +51,6 @@ router.put(
             "The code sent has already been used.",
           );
         }
-        // usedUser can be NULL or the string "null".
         const parsedUsedUser = parseJson(coupon.usedUser);
         const usedUser: string[] = Array.isArray(parsedUsedUser)
           ? parsedUsedUser
@@ -69,7 +66,6 @@ router.put(
           content?: string;
           nolimit?: boolean;
         }>(coupon.reward);
-        // Fail with a clear error if the reward definition is malformed.
         if (!reward || typeof reward !== "object") {
           throw new CouponError("Invalid code", "Invalid code sent.");
         }
@@ -104,7 +100,6 @@ router.put(
             .where("code", code);
         }
       });
-      // Invalidate the caller's cache so the granted skin shows up immediately.
       await invalidate(keys.user(userid), keys.profile(userid));
     } catch (e) {
       if (e instanceof CouponError) {

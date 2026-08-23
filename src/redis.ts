@@ -3,7 +3,6 @@ import signale from "signale";
 
 import config from "./config";
 
-// The session store, rate limiter, and cache all share this one connection.
 export const redisClient = createClient({
   socket: {
     host: config.redis.host,

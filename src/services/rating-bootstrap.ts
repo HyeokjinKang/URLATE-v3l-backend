@@ -17,7 +17,6 @@ export const rebuildRatingIndexIfNeeded = async () => {
     await rebuildRatingIndex(users);
   } catch (err) {
     signale.error(err);
-    // Release the lock on failure so a retry can happen right away.
     await releaseRebuildLock();
   }
 };

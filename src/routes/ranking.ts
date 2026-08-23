@@ -22,7 +22,6 @@ router.get("/ranking/:sort/:limit", async (req, res) => {
       );
     return;
   }
-  // Clamp limit to 1-100 to prevent excessive queries.
   const limit = Math.min(
     Math.max(toFiniteNonNegInt(req.params.limit) ?? 0, 1),
     100,
@@ -33,9 +32,6 @@ router.get("/ranking/:sort/:limit", async (req, res) => {
     // cached once and sliced per request.
     const top = await getOrSet("ranking", keys.ranking(sort), () =>
       knex("users")
-        // userid (the Google sub) isn't used for displaying rank; profiles
-        // are looked up by nickname, so there's no reason to send an
-        // internal identifier for 100 users.
         .select(
           "nickname",
           "rating",

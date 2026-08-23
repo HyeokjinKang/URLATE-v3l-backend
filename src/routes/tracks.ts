@@ -9,7 +9,6 @@ import { isValidFileName } from "../validate";
 export const router = express.Router();
 
 router.get("/tracks", async (req, res) => {
-  // Called on every page load, but only changes when a track is added.
   const results = await getAllTracks();
   if (!results.length) {
     res
@@ -62,7 +61,6 @@ router.get("/track/:name", async (req, res) => {
 });
 
 router.get("/trackInfo/:filename", async (req, res) => {
-  // Called on every track selection, but only changes when the pattern is updated.
   const filename = req.params.filename;
   if (!isValidFileName(filename)) {
     res

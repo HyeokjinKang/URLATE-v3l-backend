@@ -25,9 +25,6 @@ import {
 
 export const router = express.Router();
 
-// No real play yields dozens of runs a minute, and each submission costs a DB
-// write plus a replay file -- the global limit (600/min) alone would let one
-// signed-in user hammer both.
 const playRecordLimiter = rateLimit({
   windowSec: 60,
   max: 30,
@@ -54,7 +51,6 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
   // Identity comes only from the session; the userid/username the client sent are ignored.
   const nickname: string = results[0].nickname;
 
-  // Constrained in format since it's used in a file path and DB lookup.
   const fileName = req.body.fileName;
   if (!isValidFileName(fileName) || !isValidNickname(nickname)) {
     res
@@ -69,7 +65,6 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
     return;
   }
 
-  // Judgement counts, score and combo must all be finite, non-negative integers.
   const perfect = toFiniteNonNegInt(req.body.perfect);
   const great = toFiniteNonNegInt(req.body.great);
   const good = toFiniteNonNegInt(req.body.good);
@@ -78,7 +73,6 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
   const bullet = toFiniteNonNegInt(req.body.bullet);
   const score = toFiniteNonNegInt(req.body.score);
   const maxCombo = toFiniteNonNegInt(req.body.maxCombo);
-  // Constrained to a fixed range since it's also used in a cache group key.
   const difficultySelection = toDifficultySelection(
     req.body.difficultySelection,
   );
@@ -212,7 +206,6 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
 });
 
 router.get("/record/:index", async (req, res) => {
-  // isBest/rating can change with a later play, so short TTL, never invalidated.
   const index = req.params.index;
   if (!isValidRecordIndex(index)) {
     res
@@ -250,7 +243,6 @@ router.get("/record/:index", async (req, res) => {
   res.status(200).json({ result: "success", results });
 });
 
-// Serves every track's best record in one request instead of one call per track.
 router.get("/trackRecords/:nickname", async (req, res) => {
   const nickname = req.params.nickname;
   if (!isValidNickname(nickname)) {
@@ -281,7 +273,6 @@ router.get("/trackRecords/:nickname", async (req, res) => {
         .where("isBest", 1)
         .orderBy("filename", "asc")
         .orderBy("difficulty", "desc");
-      // Descending difficulty, matching /record/:filename/:nickname.
       const grouped: Record<string, Record<string, unknown>[]> = {};
       for (const row of rows) {
         if (!grouped[row.filename]) grouped[row.filename] = [];
@@ -300,7 +291,6 @@ router.get("/trackRecords/:nickname", async (req, res) => {
   res.status(200).json({ result: "success", records });
 });
 
-// Serves every entry in recentPlay in one request instead of one /record/:index call per id.
 const loadRecentPlays = (uid: string) =>
   getOrSet("record", keys.recentPlays(uid), async () => {
     const users = await knex("users").select("recentPlay").where("userid", uid);
@@ -348,7 +338,6 @@ const respondRecentPlays = (
   res.status(200).json({ result: "success", results });
 };
 
-// Public profiles are looked up by nickname, same as /profile/nickname/:nickname.
 router.get("/recentPlays/nickname/:nickname", async (req, res) => {
   const nickname = req.params.nickname;
   if (!isValidNickname(nickname)) {
@@ -403,8 +392,6 @@ router.get("/record/:filename/:nickname", async (req, res) => {
         .where("filename", filename)
         .where("isBest", 1)
         .orderBy("difficulty", "DESC"),
-    // Caches an empty result too; unplayed tracks are the common case on the
-    // track-select screen.
   );
   if (!results.length) {
     res.status(200).json(createSuccessResponse("empty"));
@@ -444,7 +431,6 @@ router.get("/bestRecords/:nickname", async (req, res) => {
       .whereNot("rating", 0)
       .orderBy("difficulty", "desc")
       .orderBy("rating", "desc")
-      // Only 10 are ever used, so limit it at the DB rather than after.
       .limit(10),
   );
   res.status(200).json({ result: "success", results });
@@ -470,7 +456,6 @@ router.get(
     }
 
     const { fileName, nickname } = req.params;
-    // Constrained in format since it's part of the cache key.
     const difficulty = toDifficultySelection(req.params.difficulty);
     if (
       difficulty === null ||
@@ -493,8 +478,6 @@ router.get(
       return;
     }
 
-    // Grouped so every leaderboard cache for this track/difficulty clears together
-    // when a record on it updates.
     const group = keys.leaderboardGroup(fileName, difficulty);
 
     const results = await getOrSet(
@@ -511,8 +494,6 @@ router.get(
       { group },
     );
 
-    // Count of players ahead. Null (and uncached) when there's no record, so a
-    // nonexistent nickname doesn't grow the key space.
     const rank = await getOrSet(
       "leaderboard",
       keys.leaderboardRank(fileName, difficulty, order, sort, nickname),

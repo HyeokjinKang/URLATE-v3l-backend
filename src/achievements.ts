@@ -6,7 +6,6 @@ import { knex } from "./db";
 import { getOrSet, invalidate, keys } from "./cache";
 import { parseJson } from "./validate";
 
-// Kept short since this is a real-time notification.
 const GAME_SERVER_TIMEOUT_MS = 3000;
 
 interface Data {
@@ -94,7 +93,6 @@ const achievedIndex = async (context: string, data?: Data) => {
   return index;
 };
 
-// Does the actual achievement processing; exceptions are absorbed by observer below.
 const runObserver = async (userid: string, context: string, data?: Data) => {
   const userData = await knex("users")
     .select("achievements", "ownedAlias", "banner", "alias")
@@ -187,8 +185,6 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
     alias: selectedAlias,
   };
 
-  // The daily rank job calls this for every user, so skip the write and cache
-  // invalidation when nothing actually changed.
   const unchanged =
     updated.achievements ===
       JSON.stringify(parseJson<number[]>(userData[0].achievements) ?? []) &&

@@ -9,20 +9,15 @@ import { cleanupReplayLogs } from "../replay-log";
 import { parseJson } from "../validate";
 
 const updateRankHistory = async () => {
-  // A scheduled callback has no caller to catch its exceptions, so an error
-  // here becomes an unhandledRejection.
   try {
-    // Prevent duplicate recording across instances.
     if (!(await acquireDailyJobLock("rank-history"))) return;
     signale.info(new Date());
     signale.pending(`Updating rank history...`);
     const users = await knex("users")
       .select("userid", "rankHistory", "rating")
       .orderBy("rating", "desc");
-    // Corrects any drift that incremental updates might have missed, once a day.
     await rebuildRatingIndex(users);
     for (let i = 0; i < users.length; i++) {
-      // Prevents one user's corrupted value from stopping the whole job.
       const previous = parseJson(users[i].rankHistory);
       const history = [...(Array.isArray(previous) ? previous : []), i + 1];
       await knex("users")
@@ -60,7 +55,6 @@ const updateRankHistory = async () => {
   }
 };
 
-// Cleans up replay logs past their retention period, daily.
 const cleanupLogs = async () => {
   try {
     if (!(await acquireDailyJobLock("replay-log-cleanup"))) return;
@@ -70,7 +64,6 @@ const cleanupLogs = async () => {
   }
 };
 
-// Called explicitly at startup rather than scheduled as an import side effect.
 export const scheduleJobs = () => {
   schedule.scheduleJob("59 23 * * *", updateRankHistory);
   schedule.scheduleJob("30 4 * * *", cleanupLogs);

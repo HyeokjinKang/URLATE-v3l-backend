@@ -2,9 +2,6 @@ interface ResponseBase {
   result: string;
 }
 
-// A success response carries only result, so this is a type alias rather
-// than an empty interface extends (which lint flags as identical to its
-// parent type).
 export type SuccessResponse = ResponseBase;
 
 export interface ErrorResponse extends ResponseBase {

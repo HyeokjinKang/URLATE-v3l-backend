@@ -8,13 +8,11 @@ import { scheduleJobs } from "./jobs";
 import { redisClient } from "./redis";
 import { rebuildRatingIndexIfNeeded } from "./services/rating-bootstrap";
 
-// Node 15+ terminates the process on an unhandled promise rejection.
 process.on("unhandledRejection", (reason) => {
   signale.error("Unhandled promise rejection:");
   signale.error(reason);
 });
 
-// State after uncaughtException can't be trusted, so let pm2 restart the process.
 process.on("uncaughtException", (err) => {
   signale.fatal("Uncaught exception, shutting down:");
   signale.fatal(err);
@@ -49,7 +47,6 @@ const closeRedis = async () => {
 
 const start = async () => {
   const connecting = redisClient.connect().catch((err) => {
-    // Startup continues even without Redis; falls back to the DB.
     signale.error("Failed to connect to redis on startup.");
     signale.error(err);
   });
@@ -65,7 +62,6 @@ const start = async () => {
     );
   }
 
-  // Warm this up so the ZSET is ready for the very first profile lookup.
   rebuildRatingIndexIfNeeded().catch((err) => signale.error(err));
 
   scheduleJobs();
@@ -79,17 +75,13 @@ const start = async () => {
     signale.success(`API Server running at ${host}:${config.project.port}.`);
   });
 
-  // Drains in-flight requests on deploy/restart; exiting without this leaves
-  // uncommitted transactions holding locks until the DB times them out.
   let shuttingDown = false;
   const shutdown = async (signal: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
     signale.pending(`Received ${signal}, shutting down...`);
 
-    // Stop accepting new connections and wait for in-flight requests.
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    // Stop scheduled jobs so none start a new query during shutdown.
     await schedule.gracefulShutdown().catch((err) => signale.error(err));
     await knex.destroy().catch((err) => signale.error(err));
     await closeRedis();

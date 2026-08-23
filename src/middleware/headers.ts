@@ -8,7 +8,6 @@ export const securityHeaders = (
 ) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  // Keeps personal data (e.g. /user) out of shared caches.
   res.setHeader("Cache-Control", "no-store");
   next();
 };

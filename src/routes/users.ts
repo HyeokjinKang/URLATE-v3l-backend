@@ -19,7 +19,6 @@ export const router = express.Router();
 router.get("/user", requireLogin, async (req, res) => {
   const userid = req.session.userid as string;
 
-  // Keyed by userid to prevent cross-exposure between users.
   const results = await getOrSet(
     "user",
     keys.user(userid),
@@ -102,11 +101,9 @@ const respondProfile = async (
     return;
   }
 
-  // Rank is computed from a Redis Sorted Set; tie handling matches the SQL COUNT equivalent.
   const rating = Number(results[0].rating);
   let higher = await countHigherRating(rating);
   if (higher === null) {
-    // Fall back to the DB if the index is missing, and rebuild it in the background.
     const [row] = await knex("users")
       .where("rating", ">", rating)
       .count({ higher: "*" });
@@ -118,9 +115,6 @@ const respondProfile = async (
   res.status(200).json({ result: "success", user: results[0], rank });
 };
 
-// Public profile by nickname, so the leaderboard can link to a profile without
-// exposing the internal userid. Reuses /profile/:uid's cache entry; a separate
-// key would force every profile-invalidating path to clear both.
 router.get("/profile/nickname/:nickname", async (req, res) => {
   const nickname = req.params.nickname;
   if (!isValidNickname(nickname)) {
@@ -167,7 +161,6 @@ router.get("/profilePic/:username", async (req, res) => {
 
 router.put("/settings", requireLogin, async (req, res) => {
   const userid = req.session.userid as string;
-  // Normalized against the default settings as a schema; unknown keys dropped.
   if (req.body.settings === undefined || req.body.settings === null) {
     res
       .status(400)
@@ -224,8 +217,6 @@ router.put("/profile/:element", async (req, res) => {
     return;
   }
 
-  // Resolved once before branching; per-branch checks risk a bypass in any
-  // branch that forgets one.
   const hasValidSecret = isValidSecret(req.body.secret);
   const isService = hasValidSecret && typeof req.body.userid === "string";
   const userid: string | undefined = req.session.userid
@@ -247,7 +238,6 @@ router.put("/profile/:element", async (req, res) => {
     return;
   }
 
-  // service-only elements can't be changed by session login alone.
   if (policy === "service" && !hasValidSecret) {
     res
       .status(403)
@@ -277,7 +267,6 @@ router.put("/profile/:element", async (req, res) => {
     let explicit = Number(users[0].explicit);
     switch (req.params.element) {
       case "alias": {
-        // Can only equip an alias the user actually owns.
         const ownedAlias = parseJson<number[]>(users[0].ownedAlias) ?? [];
         const selected = Number(req.body.value);
         if (!Number.isInteger(selected) || !ownedAlias.includes(selected)) {
@@ -296,7 +285,6 @@ router.put("/profile/:element", async (req, res) => {
         break;
       }
       case "background":
-        // Secret validation already happened above.
         explicit = req.body.explicit ? explicit | 2 : explicit & ~2;
         await knex("users")
           .update({ background: req.body.value, explicit })
@@ -349,7 +337,6 @@ router.put("/profile/:element", async (req, res) => {
         break;
       }
     }
-    // Invalidate so the change shows up immediately.
     await invalidate(
       keys.profile(userid),
       keys.user(userid),

@@ -12,7 +12,6 @@ export const notFoundHandler = (
     .json(createErrorResponse("failed", "Not Found", "Unknown endpoint."));
 };
 
-// Global error handler. Doesn't expose internal details like stack traces.
 // Express identifies an error handler by its 4-argument signature, so next must stay.
 export const errorHandler = (
   err: unknown,
@@ -23,8 +22,6 @@ export const errorHandler = (
 ) => {
   signale.error(err);
   if (res.headersSent) return;
-  // Preserves body-parser's 4xx (malformed JSON 400, oversized body 413);
-  // collapsing to 500 would hide whether the request or the server was at fault.
   const status =
     (err as { status?: number; statusCode?: number } | null)?.status ??
     (err as { statusCode?: number } | null)?.statusCode;

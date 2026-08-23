@@ -18,7 +18,6 @@ import { router as usersRouter } from "./routes/users";
 export const app = express();
 app.locals.pretty = true;
 
-// Avoid exposing the framework/version.
 app.disable("x-powered-by");
 
 // The proxy terminates HTTPS, so X-Forwarded-Proto must be trusted for secure
@@ -32,11 +31,9 @@ app.set("trust proxy", config.project.trustProxy ?? 2);
 
 app.use(securityHeaders);
 
-// Early, so a request about to be blocked skips session lookup and body parsing.
 app.use(rateLimit({ windowSec: 60, max: 600, prefix: "global" }));
 
 app.use(sessionMiddleware);
-// Capped to fit the largest body, the replay log (default is 100kb).
 app.use(express.json({ limit: "512kb" }));
 app.use(express.urlencoded({ extended: true, limit: "64kb" }));
 app.use(cookieParser());

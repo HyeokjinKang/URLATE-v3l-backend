@@ -4,29 +4,22 @@ import signale from "signale";
 import config from "./config";
 import { isRedisReady, redisClient } from "./redis";
 
-// Bump this to invalidate every existing cache entry when the schema changes.
 const PREFIX = "cache:v1:";
-// Namespace for the SETs that track keys to be cleared together.
 const GROUP_PREFIX = "cachegrp:v1:";
 
-// Default TTL (seconds) used when config has no value for a kind.
 const DEFAULT_TTL = {
-  // Only changes when a track is added.
   tracks: 600,
   trackInfo: 600,
   teamProfile: 600,
   notice: 300,
-  // Safe to keep long since the owner's own write explicitly invalidates it.
   user: 300,
   authStatus: 1800,
   profilePic: 300,
   bestRecord: 300,
-  // Short-lived since other users' plays can change it too.
   record: 60,
   leaderboard: 60,
   ranking: 60,
   profile: 30,
-  // Effectively immutable.
   achievements: 3600,
 };
 
@@ -63,7 +56,6 @@ export const safeSegment = (value: string | number): string => {
 
 const seg = safeSegment;
 
-// Defined in one place so lookups and invalidations never drift apart.
 export const keys = {
   tracksAll: () => "tracks:all",
   track: (name: string) => `track:${seg(name)}`,
@@ -97,23 +89,17 @@ export const keys = {
     nickname: string,
   ) =>
     `board:${seg(filename)}:${seg(difficulty)}:${seg(order)}:${seg(sort)}:rank:${seg(nickname)}`,
-  // Group used to clear every sort-order variant of a leaderboard cache at once.
   leaderboardGroup: (filename: string, difficulty: string | number) =>
     `board:${seg(filename)}:${seg(difficulty)}`,
 };
 
 interface GetOrSetOptions {
-  // If set, registers the key in a group that invalidateGroup can clear at once.
   group?: string;
-  // When false, an empty result isn't cached. Turn it off where a "not found"
-  // could poison the cache, on where empty is normal (e.g. an unplayed track).
   cacheEmpty?: boolean;
 }
 
 const LOCK_PREFIX = "cachelock:v1:";
-// If filling takes longer than this, the lock expires and the next request retries.
 const FILL_LOCK_TTL_SEC = 10;
-// Cap on how long to wait for another request's fill before going to the DB directly.
 const FILL_WAIT_TOTAL_MS = 300;
 const FILL_WAIT_INTERVAL_MS = 30;
 
@@ -137,14 +123,12 @@ export const getOrSet = async <T>(
     return { hit: true, value: JSON.parse(cached) as T };
   };
 
-  // Released in finally regardless of which path exits.
   let holdsLock = false;
   try {
     try {
       const first = await read();
       if (first.hit) return first.value as T;
 
-      // Elect exactly one request to fill the value.
       holdsLock =
         (await redisClient.set(LOCK_PREFIX + key, "1", {
           NX: true,
@@ -152,17 +136,14 @@ export const getOrSet = async <T>(
         })) === "OK";
 
       if (!holdsLock) {
-        // Another request is already filling it.
         const deadline = Date.now() + FILL_WAIT_TOTAL_MS;
         while (Date.now() < deadline) {
           await sleep(FILL_WAIT_INTERVAL_MS);
           const retry = await read();
           if (retry.hit) return retry.value as T;
         }
-        // Not filled in time; query it directly.
       }
     } catch (err) {
-      // Kept narrow so a fetcher error still propagates instead of being swallowed.
       signale.error(err);
       return await fetcher();
     }
@@ -196,7 +177,6 @@ export const getOrSet = async <T>(
   }
 };
 
-// Deletes the given cache keys. Called from write paths.
 export const invalidate = async (...keys: (string | null | undefined)[]) => {
   if (!isUsable()) return;
   const targets = keys.filter((k): k is string => !!k).map((k) => PREFIX + k);
@@ -208,7 +188,6 @@ export const invalidate = async (...keys: (string | null | undefined)[]) => {
   }
 };
 
-// Clears a cache split into many variants (e.g. by sort order) without KEYS/SCAN.
 export const invalidateGroup = async (group: string) => {
   if (!isUsable()) return;
   const groupKey = GROUP_PREFIX + group;

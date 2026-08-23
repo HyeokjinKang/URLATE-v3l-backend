@@ -40,8 +40,6 @@ export const nicknameExists = async (nickname: string): Promise<boolean> => {
   return rows.length > 0;
 };
 
-// Bridges the public API, which takes a nickname, and the cache, which is keyed
-// on userid. There's no rename path, so this mapping is safe to cache long.
 export const useridOf = async (nickname: string): Promise<string | null> => {
   const rows = await getOrSet(
     "authStatus",

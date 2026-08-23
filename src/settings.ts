@@ -1,20 +1,15 @@
 import settingsConfig from "../config/settings.json";
 
-// Normalizes user settings against the defaults (config/settings.json) as a
-// schema, so the stored keys and size are always the same shape.
-
 type SettingsValue = string | number | boolean | SettingsObject;
 interface SettingsObject {
   [key: string]: SettingsValue;
 }
 
-// Length cap for free-input strings (e.g. skin names).
 const MAX_STRING_LENGTH = 64;
 
 const isPlainObject = (value: unknown): value is SettingsObject =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-// Drops keys not in the template; fills in the default for missing or type-mismatched values.
 const normalize = (
   template: SettingsObject,
   input: unknown,

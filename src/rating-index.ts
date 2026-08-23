@@ -2,13 +2,10 @@ import signale from "signale";
 
 import { isRedisReady, redisClient } from "./redis";
 
-// Sorted Set holding the full rating-based ranking, making rank lookups O(log N).
 const RATING_KEY = "index:v1:rank:rating";
 const BUILD_KEY = `${RATING_KEY}:building`;
 const LOCK_KEY = `${RATING_KEY}:lock`;
-// Expiry (seconds) so the lock doesn't linger if the process dies mid-rebuild.
 const LOCK_TTL = 120;
-// Max members sent in a single ZADD call.
 const CHUNK_SIZE = 1000;
 
 export interface RatingRow {
@@ -22,7 +19,6 @@ const toMembers = (rows: RatingRow[]) =>
     value: String(row.userid),
   }));
 
-// Call this whenever a rating changes.
 export const setRating = async (userid: string | number, rating: number) => {
   if (!isRedisReady()) return;
   try {
@@ -54,8 +50,6 @@ export const rebuild = async (rows: RatingRow[]) => {
   }
 };
 
-// Equivalent to COUNT(*) WHERE rating > ?, ties included. Returns null if the
-// index is empty or on error, letting the caller fall back to the DB.
 export const countHigherRating = async (
   rating: number,
 ): Promise<number | null> => {
@@ -75,7 +69,6 @@ export const countHigherRating = async (
   }
 };
 
-// Rebuild lock, preventing multiple instances from scanning all users at once.
 export const acquireRebuildLock = async (): Promise<boolean> => {
   if (!isRedisReady()) return false;
   try {

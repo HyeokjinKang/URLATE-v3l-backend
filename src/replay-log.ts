@@ -4,16 +4,10 @@ import signale from "signale";
 
 import config from "./config";
 
-// Recording and retention policy for play replay logs.
-// One file accumulates per play, so without a cleanup path the disk fills up.
-
-// Default retention in days, used when config has no value.
 const DEFAULT_RETENTION_DAYS = 14;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-// Size cap for a single replay. A judgement array has a predictable size;
-// without this, anything up to the body limit (512KB) lands on disk.
 const MAX_RECORD_CHARS = 64 * 1024;
 
 export const logsRoot = path.resolve(__dirname, "../logs");
@@ -37,7 +31,6 @@ export const writeReplayLog = (
   fileName: string,
   record: unknown,
 ): boolean => {
-  // Retention of 0 days means don't keep any.
   if (retentionDays() === 0) return true;
   if (record === undefined || record === null) return true;
 
@@ -58,8 +51,6 @@ export const writeReplayLog = (
   return true;
 };
 
-// Removes expired logs and any directories left empty. Walks file by file, so
-// memory use stays constant regardless of log count.
 export const cleanupReplayLogs = async () => {
   const days = retentionDays();
   const cutoff = Date.now() - days * MS_PER_DAY;
@@ -71,7 +62,6 @@ export const cleanupReplayLogs = async () => {
     try {
       entries = await fs.readdir(dir, { withFileTypes: true });
     } catch (err) {
-      // The log directory may not exist yet.
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") signale.error(err);
       return 0;
     }
@@ -92,7 +82,6 @@ export const cleanupReplayLogs = async () => {
           remaining++;
         }
       } catch (err) {
-        // A single file failing shouldn't stop the rest of the cleanup.
         if ((err as NodeJS.ErrnoException).code !== "ENOENT")
           signale.error(err);
       }

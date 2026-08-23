@@ -21,7 +21,6 @@ const normalize = (value: string): string =>
     .replace(/5/g, "s")
     .replace(/7/g, "t");
 
-// Blocked only on an exact match against the normalized form.
 const RESERVED = new Set(
   [
     // What a missing or invalid value serializes to
@@ -69,7 +68,6 @@ const RESERVED = new Set(
   ].map(normalize),
 );
 
-// Blocked if it appears anywhere in the normalized string.
 const PROFANITY = [
   // English
   "fuck",
@@ -118,7 +116,6 @@ const PROFANITY = [
 // rather than a security control. Most false positives are one line here.
 const ALLOWED = ["shita", "shito"].map(normalize);
 
-// Only runs at signup; there's no rename path.
 export const isBlockedNickname = (nickname: string): boolean => {
   const normalized = normalize(nickname);
   if (RESERVED.has(normalized)) return true;

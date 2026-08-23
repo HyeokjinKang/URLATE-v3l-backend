@@ -27,7 +27,6 @@ const toOrigin = (value?: string): string | null => {
   }
 };
 
-// Null for a non-browser caller.
 export const requestOrigin = (req: express.Request): string | null =>
   toOrigin(req.get("origin")) ?? toOrigin(req.get("referer"));
 
