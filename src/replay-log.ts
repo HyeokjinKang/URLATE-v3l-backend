@@ -24,8 +24,12 @@ export const retentionDays = (): number => {
   return DEFAULT_RETENTION_DAYS;
 };
 
-// Returns false if the resolved path escapes the log root. The caller already
-// format-validates nickname and fileName; this is a second layer.
+// A path segment can only be these characters, so it can never introduce a
+// separator or a "..". Checked here rather than trusting the caller.
+const SAFE_SEGMENT = /^[A-Za-z0-9_-]{1,255}$/;
+
+// Returns false if either segment is unusable or the resolved path escapes the
+// log root.
 export const writeReplayLog = (
   nickname: string,
   fileName: string,
@@ -42,6 +46,9 @@ export const writeReplayLog = (
     return true;
   }
 
+  if (!SAFE_SEGMENT.test(nickname) || !SAFE_SEGMENT.test(fileName)) {
+    return false;
+  }
   const logDir = path.resolve(logsRoot, nickname, fileName);
   if (logDir !== logsRoot && !logDir.startsWith(logsRoot + path.sep)) {
     return false;

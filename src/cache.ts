@@ -51,7 +51,7 @@ export const safeSegment = (value: string | number): string => {
   const str = String(value);
   return isSafeKeySegment(str)
     ? str
-    : "h_" + createHash("sha1").update(str).digest("hex").slice(0, 24);
+    : "h_" + createHash("sha256").update(str).digest("hex").slice(0, 24);
 };
 
 const seg = safeSegment;
