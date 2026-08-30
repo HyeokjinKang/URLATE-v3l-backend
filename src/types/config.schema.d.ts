@@ -166,9 +166,13 @@ export interface CacheTTL {
    */
   teamProfile?: number;
   /**
-   * 공지(/notice) 캐시 TTL입니다.
+   * 공지(/notice, /notices) 캐시 TTL입니다. MIRAI의 공지 피드를 가져오는 주기이기도 합니다.
    */
   notice?: number;
+  /**
+   * 블로그 글(/posts) 캐시 TTL입니다. MIRAI의 블로그 피드를 가져오는 주기이기도 합니다.
+   */
+  posts?: number;
   /**
    * 본인 정보(/user) 캐시 TTL입니다. 설정 변경 시 즉시 무효화됩니다.
    */
