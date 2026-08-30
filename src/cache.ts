@@ -61,6 +61,7 @@ export const keys = {
   track: (name: string) => `track:${seg(name)}`,
   trackInfo: (filename: string) => `trackinfo:${seg(filename)}`,
   notice: (lang: string) => `notice:${seg(lang)}`,
+  notices: (lang: string) => `notices:${seg(lang)}`,
   teamProfile: (name: string) => `team:${seg(name)}`,
   profilePic: (nickname: string) => `pic:${seg(nickname)}`,
   useridByNickname: (nickname: string) => `uidof:${seg(nickname)}`,
