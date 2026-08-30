@@ -45,6 +45,10 @@ export interface Project {
    */
   game: string;
   /**
+   * 공지를 가져올 MIRAI(Docusaurus) 사이트의 URL입니다. 슬래시로 끝나면 안되는 것에 주의합니다. 설정하지 않으면 https://mirai.urlate.coupy.dev를 사용합니다.
+   */
+  mirai?: string;
+  /**
    * 백엔드 서버가 열릴 포트입니다.
    */
   port: number;
