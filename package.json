@@ -19,7 +19,7 @@
     "dev": "supervisor dist/index.js",
     "start": "pm2 start ecosystem.config.js",
     "stop": "pm2 stop URLATE-v3l-backend",
-    "generate-types-from-schema": "json2ts -i schema/ -o src/types/",
+    "generate-types-from-schema": "json2ts -i \"schema/*.schema.json\" -o src/types/",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
