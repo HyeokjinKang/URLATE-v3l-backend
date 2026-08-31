@@ -66,49 +66,6 @@ const respondWithFeed = async (
   res.status(200).json({ result: "success", data: entries.slice(0, limit) });
 };
 
-/**
- * Kept for clients that predate /notices. The response shape is the one they
- * already parse, per-language field names and all.
- */
-router.get("/notice/:lang", async (req, res) => {
-  if (!NOTICE_LANGS.has(req.params.lang)) {
-    rejectLang(res);
-    return;
-  }
-  const lang = req.params.lang;
-
-  let notices;
-  try {
-    notices = await miraiFeed("announcements", lang);
-  } catch (e) {
-    reportFailure(res, e);
-    return;
-  }
-
-  if (!notices.length) {
-    res
-      .status(400)
-      .json(
-        createErrorResponse(
-          "failed",
-          "Failed to Load",
-          "Failed to load skin data.",
-        ),
-      );
-    return;
-  }
-
-  const latest = notices[0];
-  res.status(200).json({
-    result: "success",
-    data: {
-      date: latest.date,
-      [`title_${lang}`]: latest.title,
-      [`url_${lang}`]: latest.url,
-    },
-  });
-});
-
 /** The most recent announcements. */
 router.get("/notices/:lang", (req, res) =>
   respondWithFeed(req, res, "announcements", req.params.lang),
