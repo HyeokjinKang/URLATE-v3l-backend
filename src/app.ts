@@ -42,6 +42,10 @@ app.use(ensureBody);
 
 app.use(csrfGuard);
 
+app.get("/", (req, res) => {
+  res.send("Hello from API server!");
+});
+
 app.use(authRouter);
 app.use(usersRouter);
 app.use(tracksRouter);
