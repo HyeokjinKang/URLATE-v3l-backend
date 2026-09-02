@@ -45,6 +45,10 @@ export interface Project {
    */
   game: string;
   /**
+   * 공지를 가져올 MIRAI(Docusaurus) 사이트의 URL입니다. 슬래시로 끝나면 안되는 것에 주의합니다. 설정하지 않으면 https://mirai.urlate.coupy.dev를 사용합니다.
+   */
+  mirai?: string;
+  /**
    * 백엔드 서버가 열릴 포트입니다.
    */
   port: number;
@@ -162,9 +166,13 @@ export interface CacheTTL {
    */
   teamProfile?: number;
   /**
-   * 공지(/notice) 캐시 TTL입니다.
+   * 공지(/notices) 캐시 TTL입니다. MIRAI의 공지 피드를 가져오는 주기이기도 합니다.
    */
   notice?: number;
+  /**
+   * 블로그 글(/posts) 캐시 TTL입니다. MIRAI의 블로그 피드를 가져오는 주기이기도 합니다.
+   */
+  posts?: number;
   /**
    * 본인 정보(/user) 캐시 TTL입니다. 설정 변경 시 즉시 무효화됩니다.
    */
