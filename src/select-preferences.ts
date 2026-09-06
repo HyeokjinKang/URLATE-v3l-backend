@@ -82,10 +82,18 @@ export const writeSelectPreferences = async (
   try {
     // The client sends only the fields it has, so a partial update merges
     // instead of replacing.
-    const merged = { ...(await readSelectPreferences(userid)), ...preferences };
-    await redisClient.set(keyOf(userid), JSON.stringify(merged), {
-      EX: TTL_SEC,
-    });
+    const stored = await redisClient.get(keyOf(userid));
+    let current: SelectPreferences = {};
+    if (stored !== null) {
+      try {
+        current = normalizeSelectPreferences(JSON.parse(stored));
+      } catch (err) {
+        // If the stored value is corrupted, overwrite with the new preferences.
+        signale.error(err);
+      }
+    }
+    const merged = { ...current, ...preferences };
+    await redisClient.set(keyOf(userid), JSON.stringify(merged), { EX: TTL_SEC });
     return true;
   } catch (err) {
     signale.error(err);
