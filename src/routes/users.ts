@@ -204,12 +204,22 @@ router.get("/selectPreferences", requireLogin, async (req, res) => {
 
 router.put("/selectPreferences", requireLogin, async (req, res) => {
   const userid = req.session.userid as string;
-  const preferences = normalizeSelectPreferences(req.body.preferences);
-  if (!Object.keys(preferences).length) {
+  const input = req.body.preferences;
+  if (input === undefined || input === null) {
     res
       .status(400)
       .json(
         createErrorResponse("failed", "Wrong Request", "Missing preferences."),
+      );
+    return;
+  }
+
+  const preferences = normalizeSelectPreferences(input);
+  if (!Object.keys(preferences).length) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse("failed", "Wrong Format", "Invalid preferences."),
       );
     return;
   }
