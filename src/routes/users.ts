@@ -9,6 +9,11 @@ import { requireLogin } from "../middleware/require-login";
 import { countHigherRating } from "../rating-index";
 import { countFirstPlaces } from "../record";
 import { isValidSecret } from "../secret";
+import {
+  normalizeSelectPreferences,
+  readSelectPreferences,
+  writeSelectPreferences,
+} from "../select-preferences";
 import { rebuildRatingIndexIfNeeded } from "../services/rating-bootstrap";
 import { useridOf } from "../services/tracks";
 import { normalizeSettings } from "../settings";
@@ -184,6 +189,50 @@ router.put("/settings", requireLogin, async (req, res) => {
           "failed",
           "Error occured while updating",
           "Internal server error.",
+        ),
+      );
+    return;
+  }
+  res.status(200).json(createSuccessResponse("success"));
+});
+
+router.get("/selectPreferences", requireLogin, async (req, res) => {
+  const userid = req.session.userid as string;
+  const preferences = await readSelectPreferences(userid);
+  res.status(200).json({ result: "success", preferences });
+});
+
+router.put("/selectPreferences", requireLogin, async (req, res) => {
+  const userid = req.session.userid as string;
+  const input = req.body.preferences;
+  if (input === undefined || input === null) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse("failed", "Wrong Request", "Missing preferences."),
+      );
+    return;
+  }
+
+  const preferences = normalizeSelectPreferences(input);
+  if (!Object.keys(preferences).length) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse("failed", "Wrong Format", "Invalid preferences."),
+      );
+    return;
+  }
+  // Redis-only, so a failure just means the mirror is stale; the client keeps
+  // its localStorage copy either way.
+  if (!(await writeSelectPreferences(userid, preferences))) {
+    res
+      .status(503)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Storage Unavailable",
+          "Failed to store preferences.",
         ),
       );
     return;
