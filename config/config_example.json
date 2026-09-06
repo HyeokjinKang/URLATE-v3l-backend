@@ -6,6 +6,7 @@
     "api": "https://api.example.com",
     "cdn": "https://cdn.example.com",
     "game": "https://game.example.com",
+    "mirai": "https://mirai.urlate.coupy.dev",
     "secretKey": "Something Random",
     "port": 8080,
     "host": "127.0.0.1",

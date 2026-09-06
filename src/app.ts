@@ -9,7 +9,7 @@ import { rateLimit } from "./middleware/rate-limit";
 import { sessionMiddleware } from "./middleware/session";
 import { router as authRouter } from "./routes/auth";
 import { router as couponRouter } from "./routes/coupon";
-import { router as noticeRouter } from "./routes/notice";
+import { router as miraiRouter } from "./routes/mirai";
 import { router as rankingRouter } from "./routes/ranking";
 import { router as recordsRouter } from "./routes/records";
 import { router as tracksRouter } from "./routes/tracks";
@@ -42,13 +42,17 @@ app.use(ensureBody);
 
 app.use(csrfGuard);
 
+app.get("/", (req, res) => {
+  res.send("Hello from API server!");
+});
+
 app.use(authRouter);
 app.use(usersRouter);
 app.use(tracksRouter);
 app.use(recordsRouter);
 app.use(couponRouter);
 app.use(rankingRouter);
-app.use(noticeRouter);
+app.use(miraiRouter);
 
 // Must come after the routers; placed earlier, every request would end in a 404.
 app.use(notFoundHandler);
