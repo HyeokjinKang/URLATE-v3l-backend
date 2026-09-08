@@ -10,7 +10,13 @@
   "name": "urlate-v3l-backend",
   "version": "1.0.0-rc.5",
   "description": "Avoid & Get on the tempo, URLATE",
-  "main": "src/",
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "config/settings.json",
+    "ecosystem.config.js",
+    "LICENSE"
+  ],
   "scripts": {
     "preinstall": "npx only-allow pnpm",
     "build": "tsc",
