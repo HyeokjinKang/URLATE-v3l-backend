@@ -29,7 +29,7 @@ jobs:
         run: pnpm run build
 
       - name: Prepare deployment artifact
-        run: pnpm --filter=urlate-v3l-backend deploy ./deploy --legacy --prod
+        run: pnpm --filter=urlate-v3l-backend deploy --prod ./deploy
 
       - name: Rsync to Production
         run: |
