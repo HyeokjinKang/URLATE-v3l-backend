@@ -41,6 +41,7 @@
   },
   "editor": {
     "denyCursor": false,
-    "denySkin": false
+    "denySkin": false,
+    "denySync": false
   }
 }

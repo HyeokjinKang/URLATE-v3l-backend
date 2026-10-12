@@ -54,7 +54,14 @@ router.get("/user", requireLogin, async (req, res) => {
     return;
   }
 
-  res.status(200).json({ result: "success", user: results[0] });
+  const user = results[0];
+  res.status(200).json({
+    result: "success",
+    user: {
+      ...user,
+      settings: JSON.stringify(normalizeSettings(parseJson(user.settings))),
+    },
+  });
 });
 
 const PROFILE_COLUMNS = [
