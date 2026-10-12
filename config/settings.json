@@ -15,7 +15,8 @@
       "effect": 1
     },
     "offset": 0,
-    "res": "128kbps"
+    "res": "128kbps",
+    "denyLatency": false
   },
   "input": {
     "sens": 1,
@@ -41,6 +42,8 @@
   },
   "editor": {
     "denyCursor": false,
-    "denySkin": false
+    "denySkin": false,
+    "denySync": false,
+    "denyLatency": false
   }
 }
