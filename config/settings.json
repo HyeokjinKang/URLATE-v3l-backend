@@ -6,7 +6,8 @@
     "canvasRes": 100,
     "albumRes": 75,
     "offset": 0,
-    "vsync": true
+    "vsync": true,
+    "fpsLimit": true
   },
   "sound": {
     "volume": {
