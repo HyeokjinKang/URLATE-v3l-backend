@@ -5,7 +5,8 @@
   "display": {
     "canvasRes": 100,
     "albumRes": 75,
-    "offset": 0
+    "offset": 0,
+    "vsync": true
   },
   "sound": {
     "volume": {
