@@ -118,7 +118,7 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
 
   const accuracy = Number(
     (
-      ((perfect + (great / 10) * 7 + good / 2 + (bad / 10) * 3) / totalJudge) *
+      ((perfect + (great / 10) * 8 + (good / 10) * 4 + bad / 10) / totalJudge) *
       100
     ).toFixed(1),
   );
