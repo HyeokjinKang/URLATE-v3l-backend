@@ -6,6 +6,7 @@ import { createSuccessResponse, createErrorResponse } from "../api-response";
 import { getOrSet, keys } from "../cache";
 import { knex } from "../db";
 import { rateLimit } from "../middleware/rate-limit";
+import { evaluateJudges, formatJudgeString } from "../judgement";
 import { requireLogin } from "../middleware/require-login";
 import { submitRecord } from "../record";
 import { writeReplayLog } from "../replay-log";
@@ -116,34 +117,8 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
     return;
   }
 
-  const accuracy = Number(
-    (
-      ((perfect + (great / 10) * 8 + (good / 10) * 4 + bad / 10) / totalJudge) *
-      100
-    ).toFixed(1),
-  );
-  let rank;
-  let medal = 1;
-  if (accuracy >= 98 && bad == 0 && miss == 0 && bullet == 0) {
-    rank = "SS";
-  } else if (accuracy >= 95) {
-    rank = "S";
-  } else if (accuracy >= 90) {
-    rank = "A";
-  } else if (accuracy >= 80) {
-    rank = "B";
-  } else if (accuracy >= 70) {
-    rank = "C";
-  } else {
-    rank = "F";
-    medal = 0;
-  }
-  if (bad == 0 && miss == 0 && bullet == 0) {
-    medal += 2;
-    if (bad == 0 && good == 0 && great == 0 && perfect != 0) {
-      medal = 7;
-    }
-  }
+  const counts = { perfect, great, good, bad, miss, bullet };
+  const { accuracy, rank, medal } = evaluateJudges(counts);
   // Cross-checks server-recomputed rank/accuracy against the client's claim. The
   // score itself is still client-computed; stopping that needs replay verification.
   if (rank != req.body.rank || accuracy != Number(req.body.accuracy)) {
@@ -187,7 +162,7 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
       medal,
       difficultySelection,
       difficulty,
-      judge: `${perfect} / ${great} / ${good} / ${bad} / ${miss} / ${bullet}`,
+      judge: formatJudgeString(counts),
       accuracy,
     });
     res.status(200).json(createSuccessResponse("success"));
