@@ -4,6 +4,7 @@ declare module "express-session" {
     tempName?: string;
     email?: string;
     picture?: string;
+    oauthState?: string;
   }
 }
 

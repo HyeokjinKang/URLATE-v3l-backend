@@ -1,3 +1,5 @@
+import { randomBytes, timingSafeEqual } from "node:crypto";
+
 import express from "express";
 import signale from "signale";
 import { OAuth2Client, type TokenPayload } from "google-auth-library";
@@ -58,6 +60,39 @@ const syncEmail = async (payload: TokenPayload) => {
   }
 };
 
+const matchesState = (expected: string, received: unknown) => {
+  if (typeof received !== "string") return false;
+  const a = Buffer.from(expected);
+  const b = Buffer.from(received);
+  return a.length === b.length && timingSafeEqual(a, b);
+};
+
+router.get(
+  "/auth/state",
+  rateLimit({ windowSec: 300, max: 60, prefix: "state" }),
+  (req, res) => {
+    const state = randomBytes(32).toString("base64url");
+    req.session.oauthState = state;
+    req.session.save((err) => {
+      if (err) {
+        signale.error(err);
+        res
+          .status(500)
+          .json(
+            createErrorResponse(
+              "failed",
+              "Session error",
+              "Failed to establish session.",
+            ),
+          );
+        return;
+      }
+      res.setHeader("Cache-Control", "no-store");
+      res.status(200).json({ ...createSuccessResponse("success"), state });
+    });
+  },
+);
+
 router.get("/auth/status", async (req, res) => {
   const userid = req.session.userid;
   if (!userid) {
@@ -102,11 +137,29 @@ router.post(
           );
         return;
       }
+      const expectedState = req.session.oauthState;
+      delete req.session.oauthState;
+      if (
+        !expectedState ||
+        ("state" in req.body.jwt &&
+          !matchesState(expectedState, req.body.jwt.state))
+      ) {
+        res
+          .status(400)
+          .json(
+            createErrorResponse(
+              "failed",
+              "Invalid state",
+              "Sign-in state mismatch. Please reload and try again.",
+            ),
+          );
+        return;
+      }
       const payload = await gidVerify(
         req.body.jwt.credential,
         config.google.clientId,
       );
-      if (payload) {
+      if (payload && matchesState(expectedState, payload.nonce)) {
         // Sync before writing to the session. Join copies the session's email
         // as-is, so doing this out of order would leave a stale address on an
         // account that just registered right after a sync.
