@@ -23,7 +23,8 @@
     "sens": 1,
     "keys": 0,
     "wheelReverse": 0,
-    "mouse": true
+    "mouse": true,
+    "rawInput": false
   },
   "game": {
     "skin": "Default",
