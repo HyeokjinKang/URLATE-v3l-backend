@@ -54,13 +54,18 @@ export const csrfGuard = (
     next();
     return;
   }
-  const origin = requestOrigin(req);
-  if (origin === null || ALLOWED_ORIGINS.has(origin)) {
+  const source = req.get("origin") ?? req.get("referer");
+  if (source === undefined) {
+    next();
+    return;
+  }
+  const origin = toOrigin(source);
+  if (isAllowedOrigin(origin)) {
     next();
     return;
   }
   signale.warn(
-    `Blocked cross-origin ${req.method} ${req.path} from ${origin}.`,
+    `Blocked cross-origin ${req.method} ${req.path} from ${origin ?? source}.`,
   );
   forbiddenOrigin(res);
 };

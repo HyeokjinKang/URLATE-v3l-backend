@@ -50,7 +50,7 @@ export const writeReplayLog = (
     return false;
   }
   const logDir = path.resolve(logsRoot, nickname, fileName);
-  if (logDir !== logsRoot && !logDir.startsWith(logsRoot + path.sep)) {
+  if (!logDir.startsWith(logsRoot + path.sep)) {
     return false;
   }
   const logFile = path.join(logDir, `${Date.now()}.json`);
