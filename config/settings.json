@@ -17,7 +17,8 @@
     },
     "offset": 0,
     "res": "128kbps",
-    "denyLatency": false
+    "denyLatency": false,
+    "hitSound": "default"
   },
   "input": {
     "sens": 1,
