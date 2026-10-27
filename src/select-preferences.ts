@@ -12,6 +12,9 @@ export interface SelectPreferences {
   sort?: number;
   difficultySelection?: number;
   songName?: string;
+  rate?: number;
+  disableText?: boolean;
+  autoPlay?: boolean;
 }
 
 const PREFIX = "selectprefs:v1:";
@@ -24,6 +27,9 @@ const TTL_SEC = 60 * 60 * 24 * 180;
 const MAX_SORT = 3;
 // difficultySelected() indexes the three difficulty tabs.
 const MAX_DIFFICULTY_SELECTION = 2;
+// rateChanged() clamps the playback rate to 0.5-2 in 0.1 steps.
+const MIN_RATE = 0.5;
+const MAX_RATE = 2;
 
 const toIndex = (value: unknown, max: number): number | undefined => {
   const n = Number(value);
@@ -54,6 +60,18 @@ export const normalizeSelectPreferences = (
   }
 
   if (isValidFileName(source.songName)) preferences.songName = source.songName;
+
+  const rate = source.rate;
+  if (typeof rate === "number" && rate >= MIN_RATE && rate <= MAX_RATE) {
+    preferences.rate = Math.round(rate * 10) / 10;
+  }
+
+  if (typeof source.disableText === "boolean") {
+    preferences.disableText = source.disableText;
+  }
+  if (typeof source.autoPlay === "boolean") {
+    preferences.autoPlay = source.autoPlay;
+  }
 
   return preferences;
 };
