@@ -6,7 +6,7 @@ import config from "../config";
 
 /**
  * MIRAI publishes two Docusaurus blogs: announcements, and the longer-form
- * posts on the site root. Both are read through their generated RSS feeds, so
+ * posts under /blog. Both are read through their generated RSS feeds, so
  * what the game shows is always what the site shows.
  */
 export type MiraiFeed = "announcements" | "blog";
@@ -31,11 +31,9 @@ const MIRAI_URL = config.project.mirai ?? "https://mirai.urlate.coupy.dev";
 // docusaurus.config.js.
 const MIRAI_DEFAULT_LOCALE = "en";
 
-// The announcements blog is mounted on its own route; the other one is the site
-// root, which is why its path is empty.
 const FEED_PATHS: Record<MiraiFeed, string> = {
   announcements: "/announcements",
-  blog: "",
+  blog: "/blog",
 };
 
 // Separate buckets so the two can be tuned apart in config.
