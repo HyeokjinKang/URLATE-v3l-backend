@@ -17,7 +17,6 @@
     },
     "offset": 0,
     "res": "128kbps",
-    "denyLatency": false,
     "hitSound": "default"
   },
   "input": {
@@ -46,7 +45,6 @@
   "editor": {
     "denyCursor": false,
     "denySkin": false,
-    "denySync": false,
-    "denyLatency": false
+    "denySync": false
   }
 }
