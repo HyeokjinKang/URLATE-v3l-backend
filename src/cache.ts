@@ -10,6 +10,7 @@ const GROUP_PREFIX = "cachegrp:v1:";
 const DEFAULT_TTL = {
   tracks: 600,
   trackInfo: 600,
+  pattern: 3600,
   teamProfile: 600,
   notice: 300,
   posts: 300,
@@ -61,6 +62,8 @@ export const keys = {
   tracksAll: () => "tracks:all",
   track: (name: string) => `track:${seg(name)}`,
   trackInfo: (filename: string) => `trackinfo:${seg(filename)}`,
+  pattern: (filename: string, selection: number) =>
+    `pattern:${seg(filename)}:${seg(selection)}`,
   miraiFeed: (feed: string, lang: string) => `mirai:${seg(feed)}:${seg(lang)}`,
   notices: (lang: string) => `notices:${seg(lang)}`,
   teamProfile: (name: string) => `team:${seg(name)}`,

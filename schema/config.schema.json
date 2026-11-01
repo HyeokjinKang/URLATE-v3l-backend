@@ -225,6 +225,12 @@
               "description": "패턴 정보(/trackInfo) 캐시 TTL입니다.",
               "examples": [600]
             },
+            "pattern": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "기록 제출 시 확인한 채보 존재 여부 캐시 TTL입니다.",
+              "examples": [3600]
+            },
             "teamProfile": {
               "type": "integer",
               "minimum": 1,

@@ -162,6 +162,10 @@ export interface CacheTTL {
    */
   trackInfo?: number;
   /**
+   * 기록 제출 시 확인한 채보 존재 여부 캐시 TTL입니다.
+   */
+  pattern?: number;
+  /**
    * 팀 프로필(/teamProfile) 캐시 TTL입니다.
    */
   teamProfile?: number;

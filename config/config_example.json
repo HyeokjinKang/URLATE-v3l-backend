@@ -37,6 +37,7 @@
     "ttl": {
       "tracks": 600,
       "trackInfo": 600,
+      "pattern": 3600,
       "teamProfile": 600,
       "notice": 300,
       "user": 300,

@@ -1,5 +1,6 @@
 import { getOrSet, keys } from "../cache";
 import { knex } from "../db";
+import { parseJson } from "../validate";
 
 export const TRACK_COLUMNS = [
   "name",
@@ -48,4 +49,19 @@ export const useridOf = async (nickname: string): Promise<string | null> => {
     { cacheEmpty: false },
   );
   return rows.length ? String(rows[0].userid) : null;
+};
+
+export const trackDifficulty = async (
+  fileName: string,
+  selection: number,
+): Promise<number | null> => {
+  const tracks = await getAllTracks();
+  const track = tracks.find((row) => row.fileName === fileName);
+  if (!track) return null;
+  const difficulties = parseJson(track.difficulty);
+  if (!Array.isArray(difficulties) || selection >= difficulties.length) {
+    return null;
+  }
+  const value = Number(difficulties[selection]);
+  return Number.isFinite(value) && value >= 0 ? value : null;
 };
