@@ -11,7 +11,6 @@ import { requireLogin } from "../middleware/require-login";
 import { submitRecord } from "../record";
 import { writeReplayLog } from "../replay-log";
 import { notFound } from "../respond";
-import { patternExists } from "../services/patterns";
 import {
   nicknameExists,
   trackDifficulty,
@@ -80,7 +79,9 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
   const bullet = toFiniteNonNegInt(req.body.bullet);
   const score = toFiniteNonNegInt(req.body.score);
   const maxCombo = toFiniteNonNegInt(req.body.maxCombo);
-  const difficultySelection = toFiniteNonNegInt(req.body.difficultySelection);
+  const difficultySelection = toDifficultySelection(
+    req.body.difficultySelection,
+  );
   if (
     perfect === null ||
     great === null ||
@@ -135,41 +136,8 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
     return;
   }
 
-  // Older clients send a 1-based difficultySelection along with difficulty;
-  // read as 0-based, their record would land on the next difficulty.
-  if (req.body.difficulty !== undefined) {
-    res
-      .status(400)
-      .json(
-        createErrorResponse(
-          "failed",
-          "Outdated Client",
-          "Please reload the game and try again.",
-        ),
-      );
-    return;
-  }
-
-  const difficulty = await trackDifficulty(fileName, difficultySelection);
-  let hasPattern = false;
-  if (difficulty !== null) {
-    try {
-      hasPattern = await patternExists(fileName, difficultySelection);
-    } catch (e) {
-      signale.error(e);
-      res
-        .status(503)
-        .json(
-          createErrorResponse(
-            "failed",
-            "Pattern Unavailable",
-            "Failed to verify the pattern. Please try again later.",
-          ),
-        );
-      return;
-    }
-  }
-  if (difficulty === null || !hasPattern) {
+  const difficulty = await trackDifficulty(fileName, difficultySelection - 1);
+  if (difficulty === null) {
     notFound(res, "Cannot find track or difficulty.");
     return;
   }
@@ -200,7 +168,7 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
       record: score,
       maxcombo: maxCombo,
       medal,
-      difficultySelection: difficultySelection + 1,
+      difficultySelection,
       difficulty,
       judge: formatJudgeString(counts),
       accuracy,
