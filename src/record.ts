@@ -76,28 +76,6 @@ export const submitRecord = async (submission: RecordSubmission) => {
       throw new Error("User not found for record update.");
     }
 
-    let difficultyValue = submission.difficulty;
-    const trackRow = await trx("tracks")
-      .select("difficulty")
-      .where("fileName", submission.fileName)
-      .first();
-    if (trackRow) {
-      try {
-        const arr = JSON.parse(trackRow.difficulty);
-        const idx = submission.difficultySelection - 1;
-        if (
-          Array.isArray(arr) &&
-          idx >= 0 &&
-          idx < arr.length &&
-          Number.isFinite(Number(arr[idx]))
-        ) {
-          difficultyValue = Number(arr[idx]);
-        }
-      } catch {
-        // On parse failure, fall back to the client value (already range-checked).
-      }
-    }
-
     let isBest = 0;
     const result = await trx("trackRecords")
       .select("record", "medal", "index")
@@ -118,7 +96,9 @@ export const submitRecord = async (submission: RecordSubmission) => {
     const index = uuid();
     let rating = Number(
       Math.round(
-        (submission.record / 100000000) * submission.accuracy * difficultyValue,
+        (submission.record / 100000000) *
+          submission.accuracy *
+          submission.difficulty,
       ),
     );
     let ratingDiff = rating;

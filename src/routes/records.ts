@@ -11,7 +11,12 @@ import { requireLogin } from "../middleware/require-login";
 import { submitRecord } from "../record";
 import { writeReplayLog } from "../replay-log";
 import { notFound } from "../respond";
-import { nicknameExists, trackExists, useridOf } from "../services/tracks";
+import {
+  nicknameExists,
+  trackDifficulty,
+  trackExists,
+  useridOf,
+} from "../services/tracks";
 import {
   isValidFileName,
   isValidNickname,
@@ -77,7 +82,6 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
   const difficultySelection = toDifficultySelection(
     req.body.difficultySelection,
   );
-  const difficulty = Number(req.body.difficulty);
   if (
     perfect === null ||
     great === null ||
@@ -87,9 +91,7 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
     bullet === null ||
     score === null ||
     maxCombo === null ||
-    difficultySelection === null ||
-    !Number.isFinite(difficulty) ||
-    difficulty < 0
+    difficultySelection === null
   ) {
     res
       .status(400)
@@ -131,6 +133,12 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
           "Failed to verify submitted data.",
         ),
       );
+    return;
+  }
+
+  const difficulty = await trackDifficulty(fileName, difficultySelection - 1);
+  if (difficulty === null) {
+    notFound(res, "Cannot find track or difficulty.");
     return;
   }
 
