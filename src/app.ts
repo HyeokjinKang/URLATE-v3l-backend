@@ -23,11 +23,8 @@ app.disable("x-powered-by");
 // The proxy terminates HTTPS, so X-Forwarded-Proto must be trusted for secure
 // cookies, and req.ip (used by rate limiting) comes from X-Forwarded-For.
 //
-// Must exactly match the real hop count -- Express takes req.ip by skipping
-// this many addresses from the end of X-Forwarded-For. Deployment is CDN +
-// reverse proxy, 2 hops; setting 1 would pin req.ip to the CDN and put every
-// user in one rate-limit bucket.
-app.set("trust proxy", config.project.trustProxy ?? 2);
+// Must exactly match the real hop count
+app.set("trust proxy", config.project.trustProxy ?? 1);
 
 app.use(securityHeaders);
 
