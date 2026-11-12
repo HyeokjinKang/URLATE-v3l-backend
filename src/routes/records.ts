@@ -37,7 +37,20 @@ const playRecordLimiter = rateLimit({
   prefix: "playrecord",
 });
 
-router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
+const playRecordDailyLimiter = rateLimit({
+  windowSec: 60 * 60 * 24,
+  max: 1000,
+  prefix: "playrecord-user",
+  key: (req) => req.session.userid && `user:${req.session.userid}`,
+});
+
+const playRecordGuards = [
+  playRecordLimiter,
+  requireLogin,
+  playRecordDailyLimiter,
+];
+
+router.put("/playRecord", ...playRecordGuards, async (req, res) => {
   const results = await knex("users")
     .select("nickname", "userid")
     .where("userid", req.session.userid);

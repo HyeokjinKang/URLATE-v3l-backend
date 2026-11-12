@@ -5,7 +5,12 @@ import { createErrorResponse } from "../api-response";
 import { isRedisReady, redisClient } from "../redis";
 
 export const rateLimit =
-  (options: { windowSec: number; max: number; prefix: string }) =>
+  (options: {
+    windowSec: number;
+    max: number;
+    prefix: string;
+    key?: (req: express.Request) => string | undefined;
+  }) =>
   async (
     req: express.Request,
     res: express.Response,
@@ -16,8 +21,9 @@ export const rateLimit =
       return;
     }
     try {
-      const ip = req.ip || req.socket.remoteAddress || "unknown";
-      const key = `ratelimit:${options.prefix}:${ip}`;
+      const id =
+        options.key?.(req) || req.ip || req.socket.remoteAddress || "unknown";
+      const key = `ratelimit:${options.prefix}:${id}`;
       const count = await redisClient.incr(key);
       if (count === 1) {
         await redisClient.expire(key, options.windowSec);
