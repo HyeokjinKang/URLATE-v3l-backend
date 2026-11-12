@@ -3,12 +3,21 @@ import path from "path";
 import signale from "signale";
 
 import config from "./config";
+import { isRedisReady, redisClient } from "./redis";
 
 const DEFAULT_RETENTION_DAYS = 14;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-const MAX_RECORD_CHARS = 64 * 1024;
+const MAX_RECORD_BYTES = 64 * 1024;
+
+const DAILY_USER_BYTES = 8 * 1024 * 1024;
+
+const DEFAULT_MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
+
+const TOTAL_BYTES_KEY = "replaylog:bytes:total";
+
+const userBytesKey = (nickname: string) => `replaylog:bytes:user:${nickname}`;
 
 export const logsRoot = path.resolve(__dirname, "../logs");
 
@@ -24,27 +33,53 @@ export const retentionDays = (): number => {
   return DEFAULT_RETENTION_DAYS;
 };
 
+export const maxTotalBytes = (): number => {
+  const configured = config.project.replayLogMaxBytes;
+  if (
+    typeof configured === "number" &&
+    Number.isFinite(configured) &&
+    configured >= 0
+  ) {
+    return Math.floor(configured);
+  }
+  return DEFAULT_MAX_TOTAL_BYTES;
+};
+
+const reserveBytes = async (
+  nickname: string,
+  bytes: number,
+): Promise<boolean> => {
+  if (!isRedisReady()) return false;
+  try {
+    const total = await redisClient.get(TOTAL_BYTES_KEY);
+    if (total !== null && Number(total) + bytes > maxTotalBytes()) {
+      return false;
+    }
+    const key = userBytesKey(nickname);
+    const used = await redisClient.incrBy(key, bytes);
+    if (used === bytes) await redisClient.expire(key, MS_PER_DAY / 1000);
+    if (used > DAILY_USER_BYTES) return false;
+    if (total !== null) await redisClient.incrBy(TOTAL_BYTES_KEY, bytes);
+    return true;
+  } catch (err) {
+    signale.error(err);
+    return false;
+  }
+};
+
 // A path segment can only be these characters, so it can never introduce a
 // separator or a "..". Checked here rather than trusting the caller.
 const SAFE_SEGMENT = /^[A-Za-z0-9_-]{1,255}$/;
 
 // Returns false if either segment is unusable or the resolved path escapes the
 // log root.
-export const writeReplayLog = (
+export const writeReplayLog = async (
   nickname: string,
   fileName: string,
   record: unknown,
-): boolean => {
+): Promise<boolean> => {
   if (retentionDays() === 0) return true;
   if (record === undefined || record === null) return true;
-
-  const serialized = JSON.stringify(record);
-  if (serialized === undefined || serialized.length > MAX_RECORD_CHARS) {
-    signale.warn(
-      `Skipped an oversized or unserializable replay from ${nickname}.`,
-    );
-    return true;
-  }
 
   if (!SAFE_SEGMENT.test(nickname) || !SAFE_SEGMENT.test(fileName)) {
     return false;
@@ -53,6 +88,18 @@ export const writeReplayLog = (
   if (!logDir.startsWith(logsRoot + path.sep)) {
     return false;
   }
+
+  const serialized = JSON.stringify(record);
+  const bytes =
+    serialized === undefined ? Infinity : Buffer.byteLength(serialized);
+  if (bytes > MAX_RECORD_BYTES) {
+    signale.warn(
+      `Skipped an oversized or unserializable replay from ${nickname}.`,
+    );
+    return true;
+  }
+  if (!(await reserveBytes(nickname, bytes))) return true;
+
   const logFile = path.join(logDir, `${Date.now()}.json`);
   fs.outputFile(logFile, serialized).catch((err) => signale.error(err));
   return true;
@@ -62,6 +109,7 @@ export const cleanupReplayLogs = async () => {
   const days = retentionDays();
   const cutoff = Date.now() - days * MS_PER_DAY;
   let removed = 0;
+  let keptBytes = 0;
 
   const walk = async (dir: string): Promise<number> => {
     let remaining = 0;
@@ -87,6 +135,7 @@ export const cleanupReplayLogs = async () => {
           removed++;
         } else {
           remaining++;
+          keptBytes += stat.size;
         }
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== "ENOENT")
@@ -98,6 +147,7 @@ export const cleanupReplayLogs = async () => {
 
   try {
     await walk(logsRoot);
+    if (isRedisReady()) await redisClient.set(TOTAL_BYTES_KEY, keptBytes);
     if (removed) {
       signale.success(
         `Removed ${removed} replay log(s) older than ${days} day(s).`,
@@ -106,4 +156,9 @@ export const cleanupReplayLogs = async () => {
   } catch (err) {
     signale.error(err);
   }
+};
+
+export const ensureReplayLogTotal = async () => {
+  if (!isRedisReady() || (await redisClient.exists(TOTAL_BYTES_KEY))) return;
+  await cleanupReplayLogs();
 };

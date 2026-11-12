@@ -5,7 +5,7 @@ import { observer } from "../achievements";
 import { knex } from "../db";
 import { acquireDailyJobLock } from "../job-lock";
 import { rebuild as rebuildRatingIndex } from "../rating-index";
-import { cleanupReplayLogs } from "../replay-log";
+import { cleanupReplayLogs, ensureReplayLogTotal } from "../replay-log";
 import { parseJson } from "../validate";
 
 const updateRankHistory = async () => {
@@ -65,6 +65,7 @@ const cleanupLogs = async () => {
 };
 
 export const scheduleJobs = () => {
+  ensureReplayLogTotal().catch((err) => signale.error(err));
   schedule.scheduleJob("59 23 * * *", updateRankHistory);
   schedule.scheduleJob("30 4 * * *", cleanupLogs);
 };

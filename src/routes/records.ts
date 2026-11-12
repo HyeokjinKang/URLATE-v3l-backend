@@ -142,7 +142,7 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
     return;
   }
 
-  if (!writeReplayLog(nickname, fileName, req.body.record)) {
+  if (!(await writeReplayLog(nickname, fileName, req.body.record))) {
     res
       .status(400)
       .json(createErrorResponse("failed", "Wrong Format", "Invalid log path."));
