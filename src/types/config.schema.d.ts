@@ -190,11 +190,11 @@ export interface CacheTTL {
    */
   profilePic?: number;
   /**
-   * 개인 최고 기록(/record/:filename/:nickname, /bestRecords) 캐시 TTL입니다. 기록 제출 시 즉시 무효화됩니다.
+   * 곡 선택 화면과 프로필의 최고 기록(/trackRecords, /bestRecords) 캐시 TTL입니다. 기록 제출 시 즉시 무효화됩니다.
    */
   bestRecord?: number;
   /**
-   * 개별 기록(/record/:index) 캐시 TTL입니다.
+   * 최근 플레이(/recentPlays/nickname) 캐시 TTL입니다.
    */
   record?: number;
   /**
