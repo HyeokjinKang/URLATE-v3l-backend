@@ -147,9 +147,9 @@ export const getPatternStats = async (
 };
 
 export const toPlaybackRate = (value: unknown): number | null => {
-  const rate = Number(value);
-  if (!Number.isFinite(rate) || rate < MIN_RATE || rate > MAX_RATE) return null;
-  return rate;
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  if (value < MIN_RATE || value > MAX_RATE) return null;
+  return value;
 };
 
 export const rateFactor = (rate: number) =>
@@ -159,7 +159,7 @@ export const maxScoreFor = (
   stats: PatternStats,
   counts: JudgeCounts,
   maxCombo: number,
-  rate: number | null,
+  rate: number,
 ) => {
   const basic = SCORE_BASE / stats.notes;
   const base =
@@ -175,9 +175,7 @@ export const maxScoreFor = (
   const comboSum =
     (ramp * (ramp + 1)) / 2 + Math.max(comboEvents - ramp, 0) * maxCombo;
   const scoredEvents = comboEvents + counts.bad;
-  return Math.ceil(
-    (base + comboSum * 5) * rateFactor(rate ?? MAX_RATE) + scoredEvents,
-  );
+  return Math.ceil((base + comboSum * 5) * rateFactor(rate) + scoredEvents);
 };
 
 export const checkAgainstPattern = (
@@ -185,7 +183,7 @@ export const checkAgainstPattern = (
   counts: JudgeCounts,
   score: number,
   maxCombo: number,
-  rate: number | null,
+  rate: number,
 ): boolean => {
   const judged =
     counts.perfect + counts.great + counts.good + counts.bad + counts.miss;

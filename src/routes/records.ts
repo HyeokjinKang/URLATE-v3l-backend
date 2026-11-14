@@ -123,9 +123,8 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
     return;
   }
 
-  const rate =
-    req.body.rate === undefined ? null : toPlaybackRate(req.body.rate);
-  if (req.body.rate !== undefined && rate === null) {
+  const rate = toPlaybackRate(req.body.rate);
+  if (rate === null) {
     res
       .status(400)
       .json(
