@@ -62,7 +62,7 @@ export interface Project {
    */
   replayLogRetentionDays?: number;
   /**
-   * 리플레이 로그 디렉터리 전체 용량 한도(바이트)입니다. 넘으면 새 로그를 남기지 않습니다. 설정하지 않으면 2GiB입니다.
+   * 리플레이 로그 디렉터리 전체 용량 한도(바이트)입니다. 넘으면 오래된 로그부터 지웁니다. 설정하지 않으면 2GiB입니다.
    */
   replayLogMaxBytes?: number;
   /**
