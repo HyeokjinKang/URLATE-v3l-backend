@@ -24,7 +24,7 @@ const reportFailure = (res: express.Response, err: unknown) => {
     .json(
       createErrorResponse(
         "failed",
-        "Error occured while loading",
+        "Error occurred while loading",
         "Failed to load from MIRAI.",
       ),
     );

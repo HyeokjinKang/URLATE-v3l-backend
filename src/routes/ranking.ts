@@ -51,7 +51,7 @@ router.get("/ranking/:sort/:limit", async (req, res) => {
       .json(
         createErrorResponse(
           "failed",
-          "Error occured while loading",
+          "Error occurred while loading",
           "Internal server error.",
         ),
       );

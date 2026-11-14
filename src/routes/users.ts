@@ -194,7 +194,7 @@ router.put("/settings", requireLogin, async (req, res) => {
       .json(
         createErrorResponse(
           "failed",
-          "Error occured while updating",
+          "Error occurred while updating",
           "Internal server error.",
         ),
       );
@@ -266,7 +266,7 @@ router.put("/profile/:element", async (req, res) => {
       .json(
         createErrorResponse(
           "failed",
-          "Error occured while updating",
+          "Error occurred while updating",
           "Undefined element name.",
         ),
       );
@@ -301,7 +301,7 @@ router.put("/profile/:element", async (req, res) => {
         createErrorResponse(
           "failed",
           "Authorize failed",
-          "Project secret key is not vaild.",
+          "Project secret key is not valid.",
         ),
       );
     return;
@@ -405,7 +405,7 @@ router.put("/profile/:element", async (req, res) => {
       .json(
         createErrorResponse(
           "failed",
-          "Error occured while updating",
+          "Error occurred while updating",
           "Internal server error.",
         ),
       );
@@ -427,7 +427,7 @@ router.put("/tutorial", requireLogin, async (req, res) => {
       .json(
         createErrorResponse(
           "failed",
-          "Error occured while updating",
+          "Error occurred while updating",
           "Internal server error.",
         ),
       );
