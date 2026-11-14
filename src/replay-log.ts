@@ -17,6 +17,10 @@ const TOTAL_BYTES_KEY = "replaylog:bytes:total";
 
 export const logsRoot = path.resolve(__dirname, "../logs");
 
+export const unverifiedLogsRoot = path.resolve(__dirname, "../logs-unverified");
+
+const logRoots = [logsRoot, unverifiedLogsRoot];
+
 export const retentionDays = (): number => {
   const configured = config.project.replayLogRetentionDays;
   if (
@@ -106,8 +110,18 @@ const setTotal = async (bytes: number) => {
   }
 };
 
+const listAllLogFiles = async () => {
+  const out: LogFile[] = [];
+  for (const root of logRoots) await listLogFiles(root, out);
+  return out;
+};
+
+const removeAllEmptyDirs = async () => {
+  for (const root of logRoots) await removeEmptyDirs(root);
+};
+
 const pruneOldest = async (budget: number) => {
-  const logs = await listLogFiles(logsRoot);
+  const logs = await listAllLogFiles();
   let total = logs.reduce((sum, log) => sum + log.size, 0);
   let removed = 0;
   if (total > budget) {
@@ -119,7 +133,7 @@ const pruneOldest = async (budget: number) => {
         removed++;
       }
     }
-    await removeEmptyDirs(logsRoot);
+    await removeAllEmptyDirs();
   }
   await setTotal(total);
   if (removed) {
@@ -168,6 +182,7 @@ export const writeReplayLog = async (
   nickname: string,
   fileName: string,
   record: unknown,
+  verified = true,
 ): Promise<boolean> => {
   if (retentionDays() === 0) return true;
   if (record === undefined || record === null) return true;
@@ -175,8 +190,9 @@ export const writeReplayLog = async (
   if (!SAFE_SEGMENT.test(nickname) || !SAFE_SEGMENT.test(fileName)) {
     return false;
   }
-  const logDir = path.resolve(logsRoot, nickname, fileName);
-  if (!logDir.startsWith(logsRoot + path.sep)) {
+  const root = verified ? logsRoot : unverifiedLogsRoot;
+  const logDir = path.resolve(root, nickname, fileName);
+  if (!logDir.startsWith(root + path.sep)) {
     return false;
   }
 
@@ -205,12 +221,12 @@ export const cleanupReplayLogs = async () => {
   const days = retentionDays();
   const cutoff = Date.now() - days * MS_PER_DAY;
   try {
-    const logs = await listLogFiles(logsRoot);
+    const logs = await listAllLogFiles();
     let removed = 0;
     for (const log of logs) {
       if (log.time < cutoff && (await removeLog(log))) removed++;
     }
-    await removeEmptyDirs(logsRoot);
+    await removeAllEmptyDirs();
     await pruneOldest(maxTotalBytes());
     if (removed) {
       signale.success(

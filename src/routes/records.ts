@@ -8,6 +8,11 @@ import { knex } from "../db";
 import { rateLimit } from "../middleware/rate-limit";
 import { evaluateJudges, formatJudgeString } from "../judgement";
 import { requireLogin } from "../middleware/require-login";
+import {
+  checkAgainstPattern,
+  getPatternStats,
+  toPlaybackRate,
+} from "../pattern-stats";
 import { submitRecord } from "../record";
 import { writeReplayLog } from "../replay-log";
 import { notFound } from "../respond";
@@ -118,8 +123,23 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
     return;
   }
 
+  const rate = toPlaybackRate(req.body.rate);
+  if (rate === null) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Wrong Format",
+          "Invalid playback rate in submitted record.",
+        ),
+      );
+    return;
+  }
+
   const totalJudge = perfect + great + good + bad + miss + bullet;
   if (totalJudge === 0 || score > MAX_SCORE) {
+    await writeReplayLog(nickname, fileName, req.body.record, false);
     res
       .status(400)
       .json(
@@ -134,9 +154,8 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
 
   const counts = { perfect, great, good, bad, miss, bullet };
   const { accuracy, rank, medal } = evaluateJudges(counts);
-  // Cross-checks server-recomputed rank/accuracy against the client's claim. The
-  // score itself is still client-computed; stopping that needs replay verification.
   if (rank != req.body.rank || accuracy != Number(req.body.accuracy)) {
+    await writeReplayLog(nickname, fileName, req.body.record, false);
     res
       .status(400)
       .json(
@@ -152,6 +171,40 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
   const difficulty = await trackDifficulty(fileName, difficultySelection - 1);
   if (difficulty === null) {
     notFound(res, "Cannot find track or difficulty.");
+    return;
+  }
+
+  let patternStats;
+  try {
+    patternStats = await getPatternStats(fileName, difficultySelection);
+  } catch (e) {
+    signale.error(e);
+    patternStats = null;
+  }
+  if (!patternStats) {
+    await writeReplayLog(nickname, fileName, req.body.record, false);
+    res
+      .status(503)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Failed to Verify",
+          "Failed to load the pattern for verification.",
+        ),
+      );
+    return;
+  }
+  if (!checkAgainstPattern(patternStats, counts, score, maxCombo, rate)) {
+    await writeReplayLog(nickname, fileName, req.body.record, false);
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Failed to Verify",
+          "Submitted record does not match the pattern.",
+        ),
+      );
     return;
   }
 
