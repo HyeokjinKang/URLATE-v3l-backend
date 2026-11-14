@@ -21,8 +21,6 @@ export const toFiniteNonNegInt = (value: unknown): number | null => {
 
 export const MAX_SCORE = 200_000_000;
 
-export const RANKS = new Set(["SS", "S", "A", "B", "C", "F"]);
-
 export const SORT_DIRECTIONS = new Set(["asc", "desc"]);
 
 // Fed directly into orderBy, so a whitelist is required to prevent identifier injection.
