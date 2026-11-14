@@ -111,7 +111,9 @@ export const writeSelectPreferences = async (
       }
     }
     const merged = { ...current, ...preferences };
-    await redisClient.set(keyOf(userid), JSON.stringify(merged), { EX: TTL_SEC });
+    await redisClient.set(keyOf(userid), JSON.stringify(merged), {
+      EX: TTL_SEC,
+    });
     return true;
   } catch (err) {
     signale.error(err);
