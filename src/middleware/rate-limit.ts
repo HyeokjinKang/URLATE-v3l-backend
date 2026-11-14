@@ -5,6 +5,7 @@ import signale from "signale";
 import { createErrorResponse } from "../api-response";
 import { isRedisReady, redisClient } from "../redis";
 import { isValidSecret } from "../secret";
+import { addressBucket } from "./client-address";
 
 export const SERVICE_KEY_HEADER = "x-urlate-service-key";
 export const VISITOR_IP_HEADER = "x-urlate-visitor-ip";
@@ -12,9 +13,9 @@ export const VISITOR_IP_HEADER = "x-urlate-visitor-ip";
 export const clientKey = (req: express.Request): string => {
   const visitor = req.get(VISITOR_IP_HEADER);
   if (visitor && isIP(visitor) && isValidSecret(req.get(SERVICE_KEY_HEADER))) {
-    return `visitor:${visitor}`;
+    return `visitor:${addressBucket(visitor)}`;
   }
-  return req.ip || req.socket.remoteAddress || "unknown";
+  return addressBucket(req.ip || req.socket.remoteAddress || "unknown");
 };
 
 export const rateLimit =
