@@ -59,22 +59,17 @@ const seg = safeSegment;
 
 export const keys = {
   tracksAll: () => "tracks:all",
-  track: (name: string) => `track:${seg(name)}`,
   trackInfo: (filename: string) => `trackinfo:${seg(filename)}`,
   miraiFeed: (feed: string, lang: string) => `mirai:${seg(feed)}:${seg(lang)}`,
-  notices: (lang: string) => `notices:${seg(lang)}`,
   teamProfile: (name: string) => `team:${seg(name)}`,
   profilePic: (nickname: string) => `pic:${seg(nickname)}`,
   useridByNickname: (nickname: string) => `uidof:${seg(nickname)}`,
   user: (userid: string) => `user:${seg(userid)}`,
   authStatus: (userid: string) => `authstatus:${seg(userid)}`,
   profile: (userid: string) => `profile:${seg(userid)}`,
-  bestRecord: (nickname: string, filename: string) =>
-    `bestrec:${seg(nickname)}:${seg(filename)}`,
   bestRecords: (nickname: string) => `bestrecs:${seg(nickname)}`,
   trackRecords: (nickname: string) => `trackrecs:${seg(nickname)}`,
   recentPlays: (userid: string) => `recentplays:${seg(userid)}`,
-  record: (index: string) => `record:${seg(index)}`,
   ranking: (sort: string) => `ranking:${seg(sort)}`,
   achievement: (index: number) => `achievement:${seg(index)}`,
   leaderboard: (
