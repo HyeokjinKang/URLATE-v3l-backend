@@ -38,7 +38,20 @@ const playRecordLimiter = rateLimit({
   prefix: "playrecord",
 });
 
-router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
+const playRecordAccountLimiter = rateLimit({
+  windowSec: 60 * 60,
+  max: 40,
+  prefix: "playrecord-user",
+  key: (req) => req.session.userid && `user:${req.session.userid}`,
+});
+
+const playRecordGuards = [
+  playRecordLimiter,
+  requireLogin,
+  playRecordAccountLimiter,
+];
+
+router.put("/playRecord", ...playRecordGuards, async (req, res) => {
   const results = await knex("users")
     .select("nickname", "userid")
     .where("userid", req.session.userid);
@@ -173,7 +186,7 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
     return;
   }
 
-  if (!writeReplayLog(nickname, fileName, req.body.record)) {
+  if (!(await writeReplayLog(nickname, fileName, req.body.record))) {
     res
       .status(400)
       .json(createErrorResponse("failed", "Wrong Format", "Invalid log path."));

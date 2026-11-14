@@ -62,6 +62,10 @@ export interface Project {
    */
   replayLogRetentionDays?: number;
   /**
+   * 리플레이 로그 디렉터리 전체 용량 한도(바이트)입니다. 넘으면 오래된 로그부터 지웁니다. 설정하지 않으면 2GiB입니다.
+   */
+  replayLogMaxBytes?: number;
+  /**
    * 이 서버 앞에 있는 신뢰할 수 있는 프록시의 홉 수입니다. X-Forwarded-For에서 뒤로부터 이 개수만큼을 건너뛴 주소를 클라이언트 주소로 씁니다. 실제 홉 수와 정확히 맞춰야 합니다. 적으면 레이트리밋이 프록시 주소 하나에 묶이고, 많으면 클라이언트가 헤더로 주소를 위조할 수 있습니다. 설정하지 않으면 CDN + 리버스 프록시 2홉으로 간주합니다.
    */
   trustProxy?: number;

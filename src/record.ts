@@ -110,8 +110,10 @@ export const submitRecord = async (submission: RecordSubmission) => {
       .orderBy("rating", "desc")
       .limit(1);
     if (ratingBest.length) {
-      if (Number(ratingBest[0].rating) > rating) rating = 0;
-      else {
+      if (Number(ratingBest[0].rating) > rating) {
+        rating = 0;
+        ratingDiff = 0;
+      } else {
         await trx("trackRecords")
           .update({
             rating: 0,
