@@ -357,12 +357,6 @@ const destroySession = (
   });
 };
 
-router.post("/auth/logout", (req, res) => {
-  destroySession(req, res, () => {
-    res.status(200).json(createSuccessResponse("success"));
-  });
-});
-
 // Logs out via top-level navigation and returns to the frontend. csrfGuard
 // doesn't cover GET, so the origin is checked directly -- otherwise an
 // <img src="...auth/logout"> alone could end someone else's session.
@@ -373,9 +367,7 @@ router.get("/auth/logout", (req, res) => {
   }
   destroySession(req, res, () => {
     if (req.query.redirect == "true") {
-      let adder = "";
-      if (req.query.shutdowned == "true") adder = "/?shutdowned=true";
-      res.redirect(config.project.url + adder);
+      res.redirect(config.project.url);
     } else {
       res.status(200).json(createSuccessResponse("success"));
     }

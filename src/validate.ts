@@ -35,9 +35,6 @@ export const TRACK_ORDER_COLUMNS = new Set([
 // Used to build column names (e.g. title_ko), so a whitelist is required.
 export const NOTICE_LANGS = new Set(["ko", "en"]);
 
-export const isValidRecordIndex = (value: unknown): value is string =>
-  typeof value === "string" && /^[0-9a-f]{32}$/.test(value);
-
 export const MAX_DIFFICULTY_SELECTION = 20;
 
 export const toDifficultySelection = (value: unknown): number | null => {

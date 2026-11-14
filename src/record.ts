@@ -187,7 +187,6 @@ export const submitRecord = async (submission: RecordSubmission) => {
 
   try {
     await invalidate(
-      keys.bestRecord(submission.nickname, submission.fileName),
       keys.bestRecords(submission.nickname),
       keys.trackRecords(submission.nickname),
       keys.ranking("asc"),

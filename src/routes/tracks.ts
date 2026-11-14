@@ -26,40 +26,6 @@ router.get("/tracks", async (req, res) => {
   res.status(200).json({ result: "success", tracks: results });
 });
 
-router.get("/track/:name", async (req, res) => {
-  const name = req.params.name;
-  const results = await getOrSet(
-    "tracks",
-    keys.track(name),
-    () =>
-      knex("tracks")
-        .select(
-          "name",
-          "fileName",
-          "producer",
-          "bpm",
-          "difficulty",
-          "originalName",
-        )
-        .where("name", name),
-    { cacheEmpty: false },
-  );
-  if (!results.length) {
-    res
-      .status(400)
-      .json(
-        createErrorResponse(
-          "failed",
-          "Failed to Load",
-          "Failed to load track. It may be a problem with the DB.",
-        ),
-      );
-    return;
-  }
-
-  res.status(200).json({ result: "success", track: results });
-});
-
 router.get("/trackInfo/:filename", async (req, res) => {
   const filename = req.params.filename;
   if (!isValidFileName(filename)) {
