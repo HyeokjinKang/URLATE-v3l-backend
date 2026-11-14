@@ -1,7 +1,8 @@
 import fetch from "node-fetch";
+import signale from "signale";
 
-import { getOrSet, keys } from "./cache";
 import config from "./config";
+import { knex } from "./db";
 import { JudgeCounts } from "./judgement";
 
 export interface PatternStats {
@@ -67,26 +68,82 @@ export const computePatternStats = (pattern: unknown): PatternStats | null => {
   };
 };
 
-const fetchPattern = async (fileName: string, difficultySelection: number) => {
+const STATS_COLUMNS = [
+  "notes",
+  "judges",
+  "requiredJudges",
+  "bullets",
+  "holdTicks",
+  "holdTickWeight",
+] as const;
+
+export const fetchPatternStats = async (
+  fileName: string,
+  patternIndex: number,
+) => {
   const response = await fetch(
-    `${config.project.cdn}/URLATE-patterns/${fileName}/${difficultySelection - 1}.json`,
+    `${config.project.cdn}/URLATE-patterns/${fileName}/${patternIndex}.json`,
     { signal: AbortSignal.timeout(PATTERN_TIMEOUT_MS) },
   );
   if (!response.ok) {
     throw new Error(
-      `Pattern ${fileName}/${difficultySelection - 1} responded ${response.status}.`,
+      `Pattern ${fileName}/${patternIndex} responded ${response.status}.`,
     );
   }
   return computePatternStats(await response.json());
 };
 
-export const getPatternStats = (
+export const readStoredStats = async (
+  fileName: string,
+  patternIndex: number,
+): Promise<PatternStats | null> => {
+  const [row] = await knex("patternStats")
+    .select(STATS_COLUMNS)
+    .where({ fileName, difficulty: patternIndex });
+  if (!row) return null;
+  return {
+    notes: Number(row.notes),
+    judges: Number(row.judges),
+    requiredJudges: Number(row.requiredJudges),
+    bullets: Number(row.bullets),
+    holdTicks: Number(row.holdTicks),
+    holdTickWeight: Number(row.holdTickWeight),
+  };
+};
+
+export const storeStats = (
+  fileName: string,
+  patternIndex: number,
+  stats: PatternStats,
+) =>
+  knex("patternStats")
+    .insert({ fileName, difficulty: patternIndex, ...stats })
+    .onConflict(["fileName", "difficulty"])
+    .merge();
+
+export const getPatternStats = async (
   fileName: string,
   difficultySelection: number,
-) =>
-  getOrSet("trackInfo", keys.patternStats(fileName, difficultySelection), () =>
-    fetchPattern(fileName, difficultySelection),
-  );
+): Promise<PatternStats | null> => {
+  const patternIndex = difficultySelection - 1;
+  let stored: PatternStats | null = null;
+  let readable = true;
+  try {
+    stored = await readStoredStats(fileName, patternIndex);
+  } catch (err) {
+    readable = false;
+    signale.error(err);
+  }
+  if (stored) return stored;
+
+  const stats = await fetchPatternStats(fileName, patternIndex);
+  if (stats && readable) {
+    await storeStats(fileName, patternIndex, stats).catch((err) =>
+      signale.error(err),
+    );
+  }
+  return stats;
+};
 
 export const maxScoreFor = (
   stats: PatternStats,

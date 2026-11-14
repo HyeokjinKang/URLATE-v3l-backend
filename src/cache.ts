@@ -61,8 +61,6 @@ export const keys = {
   tracksAll: () => "tracks:all",
   track: (name: string) => `track:${seg(name)}`,
   trackInfo: (filename: string) => `trackinfo:${seg(filename)}`,
-  patternStats: (filename: string, difficulty: string | number) =>
-    `patternstats:${seg(filename)}:${seg(difficulty)}`,
   miraiFeed: (feed: string, lang: string) => `mirai:${seg(feed)}:${seg(lang)}`,
   notices: (lang: string) => `notices:${seg(lang)}`,
   teamProfile: (name: string) => `team:${seg(name)}`,
