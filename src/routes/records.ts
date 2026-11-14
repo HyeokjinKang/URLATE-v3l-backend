@@ -121,6 +121,7 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
 
   const totalJudge = perfect + great + good + bad + miss + bullet;
   if (totalJudge === 0 || score > MAX_SCORE) {
+    await writeReplayLog(nickname, fileName, req.body.record, false);
     res
       .status(400)
       .json(
@@ -136,6 +137,7 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
   const counts = { perfect, great, good, bad, miss, bullet };
   const { accuracy, rank, medal } = evaluateJudges(counts);
   if (rank != req.body.rank || accuracy != Number(req.body.accuracy)) {
+    await writeReplayLog(nickname, fileName, req.body.record, false);
     res
       .status(400)
       .json(
@@ -162,6 +164,7 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
     patternStats = null;
   }
   if (!patternStats) {
+    await writeReplayLog(nickname, fileName, req.body.record, false);
     res
       .status(503)
       .json(
@@ -174,6 +177,7 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
     return;
   }
   if (!checkAgainstPattern(patternStats, counts, score, maxCombo)) {
+    await writeReplayLog(nickname, fileName, req.body.record, false);
     res
       .status(400)
       .json(
