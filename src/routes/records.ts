@@ -39,7 +39,7 @@ const playRecordLimiter = rateLimit({
 
 const playRecordAccountLimiter = rateLimit({
   windowSec: 60 * 60,
-  max: 30,
+  max: 40,
   prefix: "playrecord-user",
   key: (req) => req.session.userid && `user:${req.session.userid}`,
 });
