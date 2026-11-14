@@ -84,7 +84,10 @@ export const fetchPatternStats = async (
 ) => {
   const response = await fetch(
     `${config.project.cdn}/URLATE-patterns/${fileName}/${patternIndex}.json`,
-    { signal: AbortSignal.timeout(PATTERN_TIMEOUT_MS) },
+    {
+      headers: { Referer: `${new URL(config.project.url).origin}/` },
+      signal: AbortSignal.timeout(PATTERN_TIMEOUT_MS),
+    },
   );
   if (!response.ok) {
     throw new Error(
