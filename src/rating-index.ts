@@ -31,8 +31,6 @@ export const setRating = async (userid: string | number, rating: number) => {
   }
 };
 
-// Rebuilds the index. Loads into a temp key and swaps it in with RENAME, so
-// the existing index keeps serving traffic while the rebuild is in progress.
 export const rebuild = async (rows: RatingRow[]) => {
   if (!isRedisReady() || !rows.length) return;
   try {
@@ -55,8 +53,6 @@ export const countHigherRating = async (
 ): Promise<number | null> => {
   if (!isRedisReady() || !Number.isFinite(rating)) return null;
   try {
-    // ZCOUNT alone can't tell "index is empty" from "rank 1". Issued together
-    // so node-redis pipelines them into one round trip.
     const [size, higher] = await Promise.all([
       redisClient.zCard(RATING_KEY),
       redisClient.zCount(RATING_KEY, `(${rating}`, "+inf"),

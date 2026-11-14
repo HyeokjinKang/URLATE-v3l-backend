@@ -194,7 +194,7 @@ router.put("/settings", requireLogin, async (req, res) => {
       .json(
         createErrorResponse(
           "failed",
-          "Error occured while updating",
+          "Error occurred while updating",
           "Internal server error.",
         ),
       );
@@ -230,8 +230,6 @@ router.put("/selectPreferences", requireLogin, async (req, res) => {
       );
     return;
   }
-  // Redis-only, so a failure just means the mirror is stale; the client keeps
-  // its localStorage copy either way.
   if (!(await writeSelectPreferences(userid, preferences))) {
     res
       .status(503)
@@ -247,10 +245,6 @@ router.put("/selectPreferences", requireLogin, async (req, res) => {
   res.status(200).json(createSuccessResponse("success"));
 });
 
-// Per-element authorization policy.
-// - user   : changeable with the caller's own session or a valid secret
-// - service: requires a valid secret. Must arrive together with an NSFW
-//            classification result, so a session alone isn't enough.
 const PROFILE_ELEMENT_POLICY: Record<string, "user" | "service"> = {
   alias: "user",
   banner: "user",
@@ -266,7 +260,7 @@ router.put("/profile/:element", async (req, res) => {
       .json(
         createErrorResponse(
           "failed",
-          "Error occured while updating",
+          "Error occurred while updating",
           "Undefined element name.",
         ),
       );
@@ -301,7 +295,7 @@ router.put("/profile/:element", async (req, res) => {
         createErrorResponse(
           "failed",
           "Authorize failed",
-          "Project secret key is not vaild.",
+          "Project secret key is not valid.",
         ),
       );
     return;
@@ -353,7 +347,6 @@ router.put("/profile/:element", async (req, res) => {
           .where("userid", userid);
         break;
       case "banner": {
-        // Only allows toggling visibility (the "(-)" marker); the owned set itself can't change.
         const submitted: unknown =
           typeof req.body.value === "string"
             ? parseJson(req.body.value)
@@ -405,7 +398,7 @@ router.put("/profile/:element", async (req, res) => {
       .json(
         createErrorResponse(
           "failed",
-          "Error occured while updating",
+          "Error occurred while updating",
           "Internal server error.",
         ),
       );
@@ -427,7 +420,7 @@ router.put("/tutorial", requireLogin, async (req, res) => {
       .json(
         createErrorResponse(
           "failed",
-          "Error occured while updating",
+          "Error occurred while updating",
           "Internal server error.",
         ),
       );

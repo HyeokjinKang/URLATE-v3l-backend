@@ -6,7 +6,6 @@ import prettier from "eslint-config-prettier/flat";
 
 export default defineConfig([
   {
-    // Build output and vendored files aren't lint targets.
     ignores: ["dist/**", "src/types/**"],
   },
   {
@@ -22,8 +21,6 @@ export default defineConfig([
     files: ["**/*.{ts,mts,cts}"],
     extends: [tseslint.configs.recommended],
   },
-  // Must stay last. Turns off formatting rules prettier owns, so the two
-  // don't fight each other. This was a real conflict: eslint's
-  // no-unexpected-multiline was flagging line breaks prettier inserted.
+  // Must stay last: it turns off the formatting rules prettier owns.
   prettier,
 ]);

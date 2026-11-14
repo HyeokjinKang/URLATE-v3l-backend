@@ -36,13 +36,9 @@ const gidVerify = async (token: string, clientId: string) => {
   return ticket.getPayload();
 };
 
-// Syncs the stored email to what Google returned at login. A primary email can
-// change, so updates are keyed on sub, which stays fixed.
-//
 // Unverified addresses are never applied: Google includes addresses whose
 // ownership isn't confirmed, and storing one would attach someone else's
-// address to this account. A failure here never blocks login -- login is
-// decided by sub alone, and email resyncs next time.
+// address to this account.
 const syncEmail = async (payload: TokenPayload) => {
   if (!payload.sub || !payload.email || payload.email_verified !== true) return;
 
@@ -163,12 +159,8 @@ router.post(
         config.google.clientId,
       );
       if (payload && matchesState(expectedState, payload.nonce)) {
-        // Sync before writing to the session. Join copies the session's email
-        // as-is, so doing this out of order would leave a stale address on an
-        // account that just registered right after a sync.
         await syncEmail(payload);
 
-        // Regenerate the session ID on successful auth to prevent session fixation.
         req.session.regenerate((regenErr) => {
           if (regenErr) {
             signale.error(regenErr);
@@ -201,7 +193,7 @@ router.post(
           createErrorResponse(
             "failed",
             "Unexpected response",
-            "Unexpected response recieved.",
+            "Unexpected response received.",
           ),
         );
     } catch (err) {
@@ -214,7 +206,7 @@ router.post(
             "JWT Verification failed. Did you modify the JWT?",
           ),
         );
-      console.error(err);
+      signale.error(err);
     }
     return;
   },
@@ -357,12 +349,6 @@ const destroySession = (
   });
 };
 
-router.post("/auth/logout", (req, res) => {
-  destroySession(req, res, () => {
-    res.status(200).json(createSuccessResponse("success"));
-  });
-});
-
 // Logs out via top-level navigation and returns to the frontend. csrfGuard
 // doesn't cover GET, so the origin is checked directly -- otherwise an
 // <img src="...auth/logout"> alone could end someone else's session.
@@ -373,9 +359,7 @@ router.get("/auth/logout", (req, res) => {
   }
   destroySession(req, res, () => {
     if (req.query.redirect == "true") {
-      let adder = "";
-      if (req.query.shutdowned == "true") adder = "/?shutdowned=true";
-      res.redirect(config.project.url + adder);
+      res.redirect(config.project.url);
     } else {
       res.status(200).json(createSuccessResponse("success"));
     }

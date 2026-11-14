@@ -1,4 +1,4 @@
-import fs from "fs-extra";
+import fs from "fs/promises";
 import path from "path";
 import signale from "signale";
 
@@ -172,12 +172,8 @@ const reserveBytes = async (bytes: number) => {
   }
 };
 
-// A path segment can only be these characters, so it can never introduce a
-// separator or a "..". Checked here rather than trusting the caller.
 const SAFE_SEGMENT = /^[A-Za-z0-9_-]{1,255}$/;
 
-// Returns false if either segment is unusable or the resolved path escapes the
-// log root.
 export const writeReplayLog = async (
   nickname: string,
   fileName: string,
@@ -202,15 +198,19 @@ export const writeReplayLog = async (
   await reserveBytes(bytes);
 
   const logFile = path.join(logDir, `${Date.now()}.json`);
+  const writeLog = async () => {
+    await fs.mkdir(logDir, { recursive: true });
+    await fs.writeFile(logFile, serialized);
+  };
   try {
-    await fs.outputFile(logFile, serialized);
+    await writeLog();
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOSPC") {
       signale.error(err);
       return true;
     }
     await makeRoom(bytes);
-    await fs.outputFile(logFile, serialized).catch((retryErr) => {
+    await writeLog().catch((retryErr) => {
       signale.error(retryErr);
     });
   }

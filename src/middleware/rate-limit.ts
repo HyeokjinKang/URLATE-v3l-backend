@@ -53,7 +53,6 @@ export const rateLimit =
         return;
       }
     } catch (err) {
-      // Let the request through on a Redis failure; availability over strict limiting.
       signale.error(err);
     }
     next();

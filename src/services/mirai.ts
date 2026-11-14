@@ -1,14 +1,8 @@
 import { XMLParser } from "fast-xml-parser";
-import fetch from "node-fetch";
 
 import { CacheKind, getOrSet, keys } from "../cache";
 import config from "../config";
 
-/**
- * MIRAI publishes two Docusaurus blogs: announcements, and the longer-form
- * posts under /blog. Both are read through their generated RSS feeds, so
- * what the game shows is always what the site shows.
- */
 export type MiraiFeed = "announcements" | "blog";
 
 export interface MiraiEntry {
@@ -17,10 +11,9 @@ export interface MiraiEntry {
   url: string;
 }
 
-// The most entries kept per feed. Every caller asks for a prefix of this.
 export const MIRAI_FEED_MAX = 20;
 
-// node-fetch has no default timeout: an unresponsive MIRAI would leave the
+// fetch has no default timeout: an unresponsive MIRAI would leave the
 // promise open and the socket held.
 const FEED_TIMEOUT_MS = 5000;
 
@@ -36,7 +29,6 @@ const FEED_PATHS: Record<MiraiFeed, string> = {
   blog: "/blog",
 };
 
-// Separate buckets so the two can be tuned apart in config.
 const FEED_CACHE_KINDS: Record<MiraiFeed, CacheKind> = {
   announcements: "notice",
   blog: "posts",
@@ -57,10 +49,7 @@ interface FeedItem {
 // is text, so the conversion is only a way to be surprised later.
 const parser = new XMLParser({ ignoreAttributes: true, parseTagValue: false });
 
-// Announcement titles are written as "2025.05.17. | Something happened", and
-// the date is returned separately, so the prefix is dropped rather than shown
-// twice by every client. A title without one -- every blog post, for instance
-// -- is left alone.
+// Announcement titles are written as "2025.05.17. | Something happened".
 const TITLE_DATE_PREFIX =
   /^\s*\d{4}[.\-/]\s*\d{1,2}[.\-/]\s*\d{1,2}\.?\s*\|\s*/;
 
@@ -104,10 +93,6 @@ const fetchFeed = async (
     .slice(0, MIRAI_FEED_MAX);
 };
 
-/**
- * One feed's entries for one language, newest first. Cached, which also keeps a
- * burst of players from turning into a burst of requests to MIRAI.
- */
 export const miraiFeed = (feed: MiraiFeed, lang: string) =>
   getOrSet(FEED_CACHE_KINDS[feed], keys.miraiFeed(feed, lang), () =>
     fetchFeed(feed, lang),

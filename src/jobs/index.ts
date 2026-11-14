@@ -39,7 +39,6 @@ const updateRankHistory = async () => {
           }
         }
       }
-      // Processed sequentially so this doesn't flood the pool (max 7) with one query per user.
       await observer(`${users[i].userid}`, "RANK", {
         rank100,
         rank50,

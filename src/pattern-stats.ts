@@ -1,4 +1,3 @@
-import fetch from "node-fetch";
 import signale from "signale";
 
 import config from "./config";

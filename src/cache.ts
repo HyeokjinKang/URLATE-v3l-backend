@@ -46,8 +46,6 @@ const isUsable = (): boolean => cacheEnabled && isRedisReady();
 const isSafeKeySegment = (value: string): boolean =>
   /^[A-Za-z0-9_.-]{1,128}$/.test(value);
 
-// Unsafe input becomes a fixed-length hash, preventing delimiter (:) injection
-// and unbounded key length.
 export const safeSegment = (value: string | number): string => {
   const str = String(value);
   return isSafeKeySegment(str)
@@ -59,22 +57,17 @@ const seg = safeSegment;
 
 export const keys = {
   tracksAll: () => "tracks:all",
-  track: (name: string) => `track:${seg(name)}`,
   trackInfo: (filename: string) => `trackinfo:${seg(filename)}`,
   miraiFeed: (feed: string, lang: string) => `mirai:${seg(feed)}:${seg(lang)}`,
-  notices: (lang: string) => `notices:${seg(lang)}`,
   teamProfile: (name: string) => `team:${seg(name)}`,
   profilePic: (nickname: string) => `pic:${seg(nickname)}`,
   useridByNickname: (nickname: string) => `uidof:${seg(nickname)}`,
   user: (userid: string) => `user:${seg(userid)}`,
   authStatus: (userid: string) => `authstatus:${seg(userid)}`,
   profile: (userid: string) => `profile:${seg(userid)}`,
-  bestRecord: (nickname: string, filename: string) =>
-    `bestrec:${seg(nickname)}:${seg(filename)}`,
   bestRecords: (nickname: string) => `bestrecs:${seg(nickname)}`,
   trackRecords: (nickname: string) => `trackrecs:${seg(nickname)}`,
   recentPlays: (userid: string) => `recentplays:${seg(userid)}`,
-  record: (index: string) => `record:${seg(index)}`,
   ranking: (sort: string) => `ranking:${seg(sort)}`,
   achievement: (index: number) => `achievement:${seg(index)}`,
   leaderboard: (
@@ -107,9 +100,6 @@ const FILL_WAIT_INTERVAL_MS = 30;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Cache-aside lookup; falls back to the DB if Redis is down. On a miss, only the
-// lock holder queries the DB and the rest wait briefly, preventing a thundering
-// herd when a hot key expires.
 export const getOrSet = async <T>(
   kind: CacheKind,
   key: string,
@@ -151,7 +141,6 @@ export const getOrSet = async <T>(
     }
 
     const value = await fetcher();
-    // Don't cache null/undefined: a "lookup failed" result would stick for the TTL.
     if (value === null || value === undefined) return value;
     if (options.cacheEmpty === false && Array.isArray(value) && !value.length) {
       return value;
@@ -163,7 +152,6 @@ export const getOrSet = async <T>(
       if (options.group) {
         const groupKey = GROUP_PREFIX + options.group;
         await redisClient.sAdd(groupKey, fullKey);
-        // Set with headroom over the member TTL so the group SET doesn't linger forever.
         await redisClient.expire(groupKey, ttl * 2);
       }
     } catch (err) {

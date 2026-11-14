@@ -114,7 +114,7 @@ router.put(
         .json(
           createErrorResponse(
             "failed",
-            "Error occured while loading",
+            "Error occurred while loading",
             "Internal server error.",
           ),
         );

@@ -25,7 +25,6 @@ import {
 import {
   isValidFileName,
   isValidNickname,
-  isValidRecordIndex,
   parseJson,
   toDifficultySelection,
   toFiniteNonNegInt,
@@ -72,7 +71,6 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
     return;
   }
 
-  // Identity comes only from the session; the userid/username the client sent are ignored.
   const nickname: string = results[0].nickname;
 
   const fileName = req.body.fileName;
@@ -254,44 +252,6 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
   }
 });
 
-router.get("/record/:index", async (req, res) => {
-  const index = req.params.index;
-  if (!isValidRecordIndex(index)) {
-    res
-      .status(400)
-      .json(
-        createErrorResponse("failed", "Wrong Format", "Invalid record index."),
-      );
-    return;
-  }
-  const results = await getOrSet(
-    "record",
-    keys.record(index),
-    () =>
-      knex("trackRecords")
-        .select(
-          "filename",
-          "rank",
-          "record",
-          "maxcombo",
-          "medal",
-          "difficulty",
-          "date",
-          "judge",
-          "isBest",
-          "accuracy",
-          "rating",
-        )
-        .where("index", index),
-    { cacheEmpty: false },
-  );
-  if (!results.length) {
-    res.status(200).json(createSuccessResponse("empty"));
-    return;
-  }
-  res.status(200).json({ result: "success", results });
-});
-
 router.get("/trackRecords/:nickname", async (req, res) => {
   const nickname = req.params.nickname;
   if (!isValidNickname(nickname)) {
@@ -365,7 +325,6 @@ const loadRecentPlays = (uid: string) =>
         "rating",
       )
       .whereIn("index", indexes);
-    // whereIn doesn't preserve order, so restore recentPlay's most-recent-first order.
     const byIndex = new Map(rows.map((row) => [row.index, row]));
     return indexes
       .map((index) => byIndex.get(index))
@@ -405,48 +364,6 @@ router.get("/recentPlays/nickname/:nickname", async (req, res) => {
     return;
   }
   respondRecentPlays(res, await loadRecentPlays(uid));
-});
-
-router.get("/recentPlays/:uid", async (req, res) => {
-  respondRecentPlays(res, await loadRecentPlays(req.params.uid));
-});
-
-router.get("/record/:filename/:nickname", async (req, res) => {
-  // The track-select screen uses /trackRecords/:nickname now; kept for older clients.
-  const { filename, nickname } = req.params;
-  if (!isValidFileName(filename) || !isValidNickname(nickname)) {
-    res
-      .status(400)
-      .json(
-        createErrorResponse(
-          "failed",
-          "Wrong Format",
-          "Invalid track or user name.",
-        ),
-      );
-    return;
-  }
-  // This path caches even an empty result, so check existence first.
-  if (!(await trackExists(filename)) || !(await nicknameExists(nickname))) {
-    notFound(res, "Cannot find track or user.");
-    return;
-  }
-  const results = await getOrSet(
-    "bestRecord",
-    keys.bestRecord(nickname, filename),
-    () =>
-      knex("trackRecords")
-        .select("rank", "record", "maxcombo", "medal", "difficulty", "date")
-        .where("nickname", nickname)
-        .where("filename", filename)
-        .where("isBest", 1)
-        .orderBy("difficulty", "DESC"),
-  );
-  if (!results.length) {
-    res.status(200).json(createSuccessResponse("empty"));
-    return;
-  }
-  res.status(200).json({ result: "success", results });
 });
 
 router.get("/bestRecords/:nickname", async (req, res) => {
