@@ -3,6 +3,7 @@ import signale from "signale";
 
 import { createErrorResponse } from "../api-response";
 import { isRedisReady, redisClient } from "../redis";
+import { addressBucket } from "./client-address";
 
 export const rateLimit =
   (options: { windowSec: number; max: number; prefix: string }) =>
@@ -16,7 +17,7 @@ export const rateLimit =
       return;
     }
     try {
-      const ip = req.ip || req.socket.remoteAddress || "unknown";
+      const ip = addressBucket(req.ip || req.socket.remoteAddress || "unknown");
       const key = `ratelimit:${options.prefix}:${ip}`;
       const count = await redisClient.incr(key);
       if (count === 1) {
