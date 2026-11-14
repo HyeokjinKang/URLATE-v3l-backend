@@ -36,13 +36,9 @@ const gidVerify = async (token: string, clientId: string) => {
   return ticket.getPayload();
 };
 
-// Syncs the stored email to what Google returned at login. A primary email can
-// change, so updates are keyed on sub, which stays fixed.
-//
 // Unverified addresses are never applied: Google includes addresses whose
 // ownership isn't confirmed, and storing one would attach someone else's
-// address to this account. A failure here never blocks login -- login is
-// decided by sub alone, and email resyncs next time.
+// address to this account.
 const syncEmail = async (payload: TokenPayload) => {
   if (!payload.sub || !payload.email || payload.email_verified !== true) return;
 
@@ -163,12 +159,8 @@ router.post(
         config.google.clientId,
       );
       if (payload && matchesState(expectedState, payload.nonce)) {
-        // Sync before writing to the session. Join copies the session's email
-        // as-is, so doing this out of order would leave a stale address on an
-        // account that just registered right after a sync.
         await syncEmail(payload);
 
-        // Regenerate the session ID on successful auth to prevent session fixation.
         req.session.regenerate((regenErr) => {
           if (regenErr) {
             signale.error(regenErr);

@@ -41,7 +41,7 @@ const closeRedis = async () => {
   try {
     if (redisClient.isOpen) redisClient.destroy();
   } catch {
-    // Already closed.
+    return;
   }
 };
 
@@ -66,9 +66,6 @@ const start = async () => {
 
   scheduleJobs();
 
-  // Defaults to loopback since a reverse proxy sits in front. Binding to a
-  // wildcard address would expose the port directly, regardless of firewall
-  // policy.
   const host = config.project.host ?? "127.0.0.1";
   const server = app.listen(config.project.port, host, () => {
     signale.info(new Date());

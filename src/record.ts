@@ -18,10 +18,6 @@ export interface RecordSubmission {
   accuracy: number;
 }
 
-// Counts tracks (per difficulty) this user holds first place on. Computed per
-// lookup rather than kept in a column, since a counter would have to decrement
-// whoever was knocked out of first -- locking someone else's row inside the
-// submission transaction. Ties count for both sides, matching leaderboard rank.
 // Needs the (filename, difficulty, isBest, record) index; see schema/indexes.sql.
 export const countFirstPlaces = async (nickname: string): Promise<number> => {
   const [row] = await knex({ mine: "trackRecords" })
@@ -83,7 +79,6 @@ export const submitRecord = async (submission: RecordSubmission) => {
       .where("filename", submission.fileName)
       .where("isBest", 1)
       .where("difficulty", submission.difficultySelection);
-    // Cast to Number so a string column doesn't get compared lexicographically.
     if (result.length && Number(result[0].record) < submission.record) {
       isBest = 1;
       await trx("trackRecords")
@@ -141,8 +136,6 @@ export const submitRecord = async (submission: RecordSubmission) => {
       fc = 0,
       clear = 0;
     if (isBest) {
-      // Per-bit: arithmetic subtraction goes negative when the score improves
-      // but the combo badge drops.
       const newMedal = submission.medal;
       const oldMedal = result.length ? Number(result[0].medal) : 0;
       const diff = (mask: number) =>

@@ -37,7 +37,6 @@ const idDB = {
   TOP_1: 14,
 };
 
-// TODO: EZPZ and MID_GAP achievements aren't implemented yet.
 const achievedIndex = async (context: string, data?: Data) => {
   const index: Array<number> = [];
   switch (context) {
@@ -52,7 +51,6 @@ const achievedIndex = async (context: string, data?: Data) => {
       data.medal = Number(data.medal);
       if (data.medal == 7) index.push(idDB.ALL_PERFECT);
       if (data.medal - 2 >= 0) {
-        // FC
         index.push(idDB.FULL_COMBO);
         if (data.good == 1 && data.great == 0) index.push(idDB.ONE_GOOD);
         else if (data.good == 0 && data.great == 1) index.push(idDB.ONE_GREAT);
@@ -106,8 +104,6 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
 
   const index: number[] = await achievedIndex(context, data);
 
-  // RANK reprocesses every achievement to keep aliases in sync, but only
-  // notifies for the newly unlocked ones.
   let filteredIndex: number[];
   let newAchievements: number[];
 
@@ -119,8 +115,6 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
     newAchievements = filteredIndex;
   }
 
-  // RANK reclaims a title when a player drops out, so it reaches the alias
-  // adjustment below even with an empty list.
   if (context !== "RANK" && !filteredIndex.length) return;
 
   const achievementsList: Array<Achievement> = [];
@@ -130,7 +124,6 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
       .increment("count")
       .catch((err: Error) => signale.error(err));
     achievements.add(i);
-    // TODO: Find more elegant way to get i18n-ed data
     const achievement = await getOrSet<Achievement[]>(
       "achievements",
       keys.achievement(i),
@@ -142,12 +135,10 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
     achievementsList.push(achievement[0]);
   }
 
-  // Reward
   const ownedAlias = new Set(parseJson<number[]>(userData[0].ownedAlias) ?? []);
   const banner = new Set(parseJson<string[]>(userData[0].banner) ?? []);
   let selectedAlias = userData[0].alias;
   if (context === "RANK") {
-    // Rank-related aliases are IDs 8-11.
     ownedAlias.delete(8);
     ownedAlias.delete(9);
     ownedAlias.delete(10);
@@ -169,8 +160,6 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
       if (reward[0] === "alias" && context !== "RANK") {
         const aliasId = Number(reward[1]);
         if (Number.isInteger(aliasId)) ownedAlias.add(aliasId);
-      } else if (reward[0] === "reward") {
-        // Not implemented yet.
       } else if (reward[0] === "banner") {
         if (typeof reward[1] === "string") banner.add(reward[1]);
       }
@@ -225,8 +214,6 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
   }
 };
 
-// Never rejects, so callers can skip await/.catch. Runs outside the request
-// flow, where a leaked exception would end the process via unhandledRejection.
 export const observer = async (
   userid: string,
   context: string,

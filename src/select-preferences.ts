@@ -4,10 +4,6 @@ import { safeSegment } from "./cache";
 import { isRedisReady, redisClient } from "./redis";
 import { isValidFileName } from "./validate";
 
-// Song select state (sort order, difficulty tab, last played track) lives in the
-// client's localStorage. A mirror is kept here so a player signing in from
-// another browser or device gets the same screen back; localStorage stays the
-// first source and this is only read when it has nothing.
 export interface SelectPreferences {
   sort?: number;
   difficultySelection?: number;
@@ -19,8 +15,6 @@ export interface SelectPreferences {
 
 const PREFIX = "selectprefs:v1:";
 
-// Refreshed on every write, so an active player never loses the mirror while an
-// abandoned key eventually leaves Redis.
 const TTL_SEC = 60 * 60 * 24 * 180;
 
 // sortSelected() indexes [name, producer, difficulty, BPM].
@@ -37,8 +31,6 @@ const toIndex = (value: unknown, max: number): number | undefined => {
   return n;
 };
 
-// Unknown or out-of-range fields are dropped instead of defaulted: a missing
-// field means "the client had nothing", which is different from index 0.
 export const normalizeSelectPreferences = (
   input: unknown,
 ): SelectPreferences => {
@@ -98,15 +90,12 @@ export const writeSelectPreferences = async (
 ): Promise<boolean> => {
   if (!isRedisReady()) return false;
   try {
-    // The client sends only the fields it has, so a partial update merges
-    // instead of replacing.
     const stored = await redisClient.get(keyOf(userid));
     let current: SelectPreferences = {};
     if (stored !== null) {
       try {
         current = normalizeSelectPreferences(JSON.parse(stored));
       } catch (err) {
-        // If the stored value is corrupted, overwrite with the new preferences.
         signale.error(err);
       }
     }

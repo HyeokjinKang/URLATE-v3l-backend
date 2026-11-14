@@ -22,6 +22,6 @@ export const sessionMiddleware = session({
     httpOnly: true,
     secure: isProduction,
     sameSite: "lax",
-    maxAge: 1000 * 60 * 60 * 24 * 14, // 14 days
+    maxAge: 1000 * 60 * 60 * 24 * 14,
   },
 });

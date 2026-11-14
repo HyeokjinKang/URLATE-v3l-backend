@@ -30,20 +30,12 @@ const reportFailure = (res: express.Response, err: unknown) => {
     );
 };
 
-/**
- * A feed's entries, newest first.
- *
- * An empty feed is a 200 with an empty list: "nothing has been posted" is an
- * answer, not a failure, and a caller rendering a list has nothing to recover
- * from.
- */
 const respondWithFeed = async (
   req: express.Request,
   res: express.Response,
   feed: MiraiFeed,
   lang: string,
 ) => {
-  // Picks the locale path on MIRAI, so restricted to a whitelist.
   if (!NOTICE_LANGS.has(lang)) {
     rejectLang(res);
     return;
@@ -55,8 +47,6 @@ const respondWithFeed = async (
 
   let entries;
   try {
-    // Any limit is just a prefix of the same ordered list, so the longest one
-    // is cached once per feed and language and sliced per request.
     entries = await miraiFeed(feed, lang);
   } catch (e) {
     reportFailure(res, e);
@@ -66,12 +56,10 @@ const respondWithFeed = async (
   res.status(200).json({ result: "success", data: entries.slice(0, limit) });
 };
 
-/** The most recent announcements. */
 router.get("/notices/:lang", (req, res) =>
   respondWithFeed(req, res, "announcements", req.params.lang),
 );
 
-/** The most recent blog posts, which are published apart from announcements. */
 router.get("/posts/:lang", (req, res) =>
   respondWithFeed(req, res, "blog", req.params.lang),
 );

@@ -71,7 +71,6 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
     return;
   }
 
-  // Identity comes only from the session; the userid/username the client sent are ignored.
   const nickname: string = results[0].nickname;
 
   const fileName = req.body.fileName;
@@ -326,7 +325,6 @@ const loadRecentPlays = (uid: string) =>
         "rating",
       )
       .whereIn("index", indexes);
-    // whereIn doesn't preserve order, so restore recentPlay's most-recent-first order.
     const byIndex = new Map(rows.map((row) => [row.index, row]));
     return indexes
       .map((index) => byIndex.get(index))

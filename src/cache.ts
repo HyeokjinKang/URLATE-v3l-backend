@@ -46,8 +46,6 @@ const isUsable = (): boolean => cacheEnabled && isRedisReady();
 const isSafeKeySegment = (value: string): boolean =>
   /^[A-Za-z0-9_.-]{1,128}$/.test(value);
 
-// Unsafe input becomes a fixed-length hash, preventing delimiter (:) injection
-// and unbounded key length.
 export const safeSegment = (value: string | number): string => {
   const str = String(value);
   return isSafeKeySegment(str)
@@ -102,9 +100,6 @@ const FILL_WAIT_INTERVAL_MS = 30;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Cache-aside lookup; falls back to the DB if Redis is down. On a miss, only the
-// lock holder queries the DB and the rest wait briefly, preventing a thundering
-// herd when a hot key expires.
 export const getOrSet = async <T>(
   kind: CacheKind,
   key: string,
@@ -146,7 +141,6 @@ export const getOrSet = async <T>(
     }
 
     const value = await fetcher();
-    // Don't cache null/undefined: a "lookup failed" result would stick for the TTL.
     if (value === null || value === undefined) return value;
     if (options.cacheEmpty === false && Array.isArray(value) && !value.length) {
       return value;
@@ -158,7 +152,6 @@ export const getOrSet = async <T>(
       if (options.group) {
         const groupKey = GROUP_PREFIX + options.group;
         await redisClient.sAdd(groupKey, fullKey);
-        // Set with headroom over the member TTL so the group SET doesn't linger forever.
         await redisClient.expire(groupKey, ttl * 2);
       }
     } catch (err) {

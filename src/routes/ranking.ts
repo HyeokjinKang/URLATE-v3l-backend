@@ -28,8 +28,6 @@ router.get("/ranking/:sort/:limit", async (req, res) => {
   );
   let results;
   try {
-    // Any limit is just a prefix of the same sorted result, so the top 100 is
-    // cached once and sliced per request.
     const top = await getOrSet("ranking", keys.ranking(sort), () =>
       knex("users")
         .select(
