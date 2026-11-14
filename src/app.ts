@@ -1,4 +1,3 @@
-import cookieParser from "cookie-parser";
 import express from "express";
 
 import config from "./config";
@@ -16,7 +15,6 @@ import { router as tracksRouter } from "./routes/tracks";
 import { router as usersRouter } from "./routes/users";
 
 export const app = express();
-app.locals.pretty = true;
 
 app.disable("x-powered-by");
 
@@ -33,7 +31,6 @@ app.use(rateLimit({ windowSec: 60, max: 600, prefix: "global" }));
 app.use(sessionMiddleware);
 app.use(express.json({ limit: "512kb" }));
 app.use(express.urlencoded({ extended: true, limit: "64kb" }));
-app.use(cookieParser());
 
 app.use(ensureBody);
 
