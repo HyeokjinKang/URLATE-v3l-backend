@@ -201,7 +201,7 @@ router.post(
           createErrorResponse(
             "failed",
             "Unexpected response",
-            "Unexpected response recieved.",
+            "Unexpected response received.",
           ),
         );
     } catch (err) {
@@ -214,7 +214,7 @@ router.post(
             "JWT Verification failed. Did you modify the JWT?",
           ),
         );
-      console.error(err);
+      signale.error(err);
     }
     return;
   },

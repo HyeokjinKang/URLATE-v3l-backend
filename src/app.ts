@@ -30,7 +30,6 @@ app.use(rateLimit({ windowSec: 60, max: 600, prefix: "global" }));
 
 app.use(sessionMiddleware);
 app.use(express.json({ limit: "512kb" }));
-app.use(express.urlencoded({ extended: true, limit: "64kb" }));
 
 app.use(ensureBody);
 
