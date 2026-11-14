@@ -36,6 +36,11 @@ CREATE INDEX idx_trackrecords_user_best
 CREATE INDEX idx_trackrecords_user_rating
   ON trackRecords (nickname, filename, difficulty, rating);
 
+-- Rated records of one user.
+--   GET /bestRecords/:nickname  WHERE nickname = ? AND rating <> 0
+CREATE INDEX idx_trackrecords_user_rated
+  ON trackRecords (nickname, rating);
+
 -- Single-record lookup and recent play list.
 --   GET /record/:index          WHERE index = ?
 --   GET /recentPlays/:uid       WHERE index IN (...)

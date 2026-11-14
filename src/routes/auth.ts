@@ -60,6 +60,8 @@ const syncEmail = async (payload: TokenPayload) => {
   }
 };
 
+const ANONYMOUS_SESSION_MS = 1000 * 60 * 10;
+
 const matchesState = (expected: string, received: unknown) => {
   if (typeof received !== "string") return false;
   const a = Buffer.from(expected);
@@ -73,6 +75,7 @@ router.get(
   (req, res) => {
     const state = randomBytes(32).toString("base64url");
     req.session.oauthState = state;
+    if (!req.session.userid) req.session.cookie.maxAge = ANONYMOUS_SESSION_MS;
     req.session.save((err) => {
       if (err) {
         signale.error(err);
