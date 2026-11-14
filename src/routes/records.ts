@@ -37,9 +37,9 @@ const playRecordLimiter = rateLimit({
   prefix: "playrecord",
 });
 
-const playRecordDailyLimiter = rateLimit({
-  windowSec: 60 * 60 * 24,
-  max: 1000,
+const playRecordAccountLimiter = rateLimit({
+  windowSec: 60 * 60,
+  max: 30,
   prefix: "playrecord-user",
   key: (req) => req.session.userid && `user:${req.session.userid}`,
 });
@@ -47,7 +47,7 @@ const playRecordDailyLimiter = rateLimit({
 const playRecordGuards = [
   playRecordLimiter,
   requireLogin,
-  playRecordDailyLimiter,
+  playRecordAccountLimiter,
 ];
 
 router.put("/playRecord", ...playRecordGuards, async (req, res) => {
