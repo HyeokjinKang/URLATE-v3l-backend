@@ -8,6 +8,11 @@ import { knex } from "../db";
 import { rateLimit } from "../middleware/rate-limit";
 import { evaluateJudges, formatJudgeString } from "../judgement";
 import { requireLogin } from "../middleware/require-login";
+import {
+  checkAgainstPattern,
+  getPatternStats,
+  toPlaybackRate,
+} from "../pattern-stats";
 import { submitRecord } from "../record";
 import { writeReplayLog } from "../replay-log";
 import { notFound } from "../respond";
@@ -37,7 +42,20 @@ const playRecordLimiter = rateLimit({
   prefix: "playrecord",
 });
 
-router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
+const playRecordAccountLimiter = rateLimit({
+  windowSec: 60 * 60,
+  max: 40,
+  prefix: "playrecord-user",
+  key: (req) => req.session.userid && `user:${req.session.userid}`,
+});
+
+const playRecordGuards = [
+  playRecordLimiter,
+  requireLogin,
+  playRecordAccountLimiter,
+];
+
+router.put("/playRecord", ...playRecordGuards, async (req, res) => {
   const results = await knex("users")
     .select("nickname", "userid")
     .where("userid", req.session.userid);
@@ -105,8 +123,23 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
     return;
   }
 
+  const rate = toPlaybackRate(req.body.rate);
+  if (rate === null) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Wrong Format",
+          "Invalid playback rate in submitted record.",
+        ),
+      );
+    return;
+  }
+
   const totalJudge = perfect + great + good + bad + miss + bullet;
   if (totalJudge === 0 || score > MAX_SCORE) {
+    await writeReplayLog(nickname, fileName, req.body.record, false);
     res
       .status(400)
       .json(
@@ -121,9 +154,8 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
 
   const counts = { perfect, great, good, bad, miss, bullet };
   const { accuracy, rank, medal } = evaluateJudges(counts);
-  // Cross-checks server-recomputed rank/accuracy against the client's claim. The
-  // score itself is still client-computed; stopping that needs replay verification.
   if (rank != req.body.rank || accuracy != Number(req.body.accuracy)) {
+    await writeReplayLog(nickname, fileName, req.body.record, false);
     res
       .status(400)
       .json(
@@ -142,7 +174,41 @@ router.put("/playRecord", playRecordLimiter, requireLogin, async (req, res) => {
     return;
   }
 
-  if (!writeReplayLog(nickname, fileName, req.body.record)) {
+  let patternStats;
+  try {
+    patternStats = await getPatternStats(fileName, difficultySelection);
+  } catch (e) {
+    signale.error(e);
+    patternStats = null;
+  }
+  if (!patternStats) {
+    await writeReplayLog(nickname, fileName, req.body.record, false);
+    res
+      .status(503)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Failed to Verify",
+          "Failed to load the pattern for verification.",
+        ),
+      );
+    return;
+  }
+  if (!checkAgainstPattern(patternStats, counts, score, maxCombo, rate)) {
+    await writeReplayLog(nickname, fileName, req.body.record, false);
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Failed to Verify",
+          "Submitted record does not match the pattern.",
+        ),
+      );
+    return;
+  }
+
+  if (!(await writeReplayLog(nickname, fileName, req.body.record))) {
     res
       .status(400)
       .json(createErrorResponse("failed", "Wrong Format", "Invalid log path."));

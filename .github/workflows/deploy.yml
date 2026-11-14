@@ -52,6 +52,7 @@ jobs:
           rsync -azq --delete \
             --exclude='config/config.json' \
             --exclude='logs/' \
+            --exclude='logs-unverified/' \
             $GITHUB_WORKSPACE/deploy/ URLATE-PRODUCTION:${{secrets.DEPLOY_TARGET}}/
 
       - name: Restart
