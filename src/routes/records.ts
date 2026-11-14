@@ -8,7 +8,11 @@ import { knex } from "../db";
 import { rateLimit } from "../middleware/rate-limit";
 import { evaluateJudges, formatJudgeString } from "../judgement";
 import { requireLogin } from "../middleware/require-login";
-import { checkAgainstPattern, getPatternStats } from "../pattern-stats";
+import {
+  checkAgainstPattern,
+  getPatternStats,
+  toPlaybackRate,
+} from "../pattern-stats";
 import { submitRecord } from "../record";
 import { writeReplayLog } from "../replay-log";
 import { notFound } from "../respond";
@@ -119,6 +123,21 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
     return;
   }
 
+  const rate =
+    req.body.rate === undefined ? null : toPlaybackRate(req.body.rate);
+  if (req.body.rate !== undefined && rate === null) {
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Wrong Format",
+          "Invalid playback rate in submitted record.",
+        ),
+      );
+    return;
+  }
+
   const totalJudge = perfect + great + good + bad + miss + bullet;
   if (totalJudge === 0 || score > MAX_SCORE) {
     await writeReplayLog(nickname, fileName, req.body.record, false);
@@ -176,7 +195,7 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
       );
     return;
   }
-  if (!checkAgainstPattern(patternStats, counts, score, maxCombo)) {
+  if (!checkAgainstPattern(patternStats, counts, score, maxCombo, rate)) {
     await writeReplayLog(nickname, fileName, req.body.record, false);
     res
       .status(400)
