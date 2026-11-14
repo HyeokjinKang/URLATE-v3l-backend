@@ -19,7 +19,12 @@ export const clientKey = (req: express.Request): string => {
 };
 
 export const rateLimit =
-  (options: { windowSec: number; max: number; prefix: string }) =>
+  (options: {
+    windowSec: number;
+    max: number;
+    prefix: string;
+    key?: (req: express.Request) => string | undefined;
+  }) =>
   async (
     req: express.Request,
     res: express.Response,
@@ -30,7 +35,7 @@ export const rateLimit =
       return;
     }
     try {
-      const key = `ratelimit:${options.prefix}:${clientKey(req)}`;
+      const key = `ratelimit:${options.prefix}:${options.key?.(req) || clientKey(req)}`;
       const count = await redisClient.incr(key);
       if (count === 1) {
         await redisClient.expire(key, options.windowSec);
