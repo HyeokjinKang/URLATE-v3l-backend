@@ -3,12 +3,17 @@ import path from "path";
 import signale from "signale";
 
 import config from "./config";
+import { isRedisReady, redisClient } from "./redis";
 
 const DEFAULT_RETENTION_DAYS = 14;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-const MAX_RECORD_CHARS = 64 * 1024;
+const DEFAULT_MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
+
+const PRUNE_TARGET_RATIO = 0.9;
+
+const TOTAL_BYTES_KEY = "replaylog:bytes:total";
 
 export const logsRoot = path.resolve(__dirname, "../logs");
 
@@ -24,27 +29,148 @@ export const retentionDays = (): number => {
   return DEFAULT_RETENTION_DAYS;
 };
 
+export const maxTotalBytes = (): number => {
+  const configured = config.project.replayLogMaxBytes;
+  if (
+    typeof configured === "number" &&
+    Number.isFinite(configured) &&
+    configured >= 0
+  ) {
+    return Math.floor(configured);
+  }
+  return DEFAULT_MAX_TOTAL_BYTES;
+};
+
+type LogFile = { file: string; time: number; size: number };
+
+const listLogFiles = async (dir: string, out: LogFile[] = []) => {
+  let entries;
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") signale.error(err);
+    return out;
+  }
+  for (const entry of entries) {
+    const target = path.join(dir, entry.name);
+    try {
+      if (entry.isDirectory()) {
+        await listLogFiles(target, out);
+        continue;
+      }
+      const stat = await fs.stat(target);
+      out.push({ file: target, time: stat.mtimeMs, size: stat.size });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") signale.error(err);
+    }
+  }
+  return out;
+};
+
+const removeEmptyDirs = async (dir: string): Promise<boolean> => {
+  let entries;
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+  let empty = true;
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      empty = false;
+      continue;
+    }
+    const target = path.join(dir, entry.name);
+    if (await removeEmptyDirs(target)) await fs.rmdir(target).catch(() => {});
+    else empty = false;
+  }
+  return empty;
+};
+
+const removeLog = async (log: LogFile) => {
+  try {
+    await fs.unlink(log.file);
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") signale.error(err);
+    return false;
+  }
+};
+
+const setTotal = async (bytes: number) => {
+  if (!isRedisReady()) return;
+  try {
+    await redisClient.set(TOTAL_BYTES_KEY, bytes);
+  } catch (err) {
+    signale.error(err);
+  }
+};
+
+const pruneOldest = async (budget: number) => {
+  const logs = await listLogFiles(logsRoot);
+  let total = logs.reduce((sum, log) => sum + log.size, 0);
+  let removed = 0;
+  if (total > budget) {
+    logs.sort((a, b) => a.time - b.time);
+    for (const log of logs) {
+      if (total <= budget) break;
+      if (await removeLog(log)) {
+        total -= log.size;
+        removed++;
+      }
+    }
+    await removeEmptyDirs(logsRoot);
+  }
+  await setTotal(total);
+  if (removed) {
+    signale.warn(
+      `Removed ${removed} oldest replay log(s) to stay under ${maxTotalBytes()} bytes.`,
+    );
+  }
+  return total;
+};
+
+let pruning: Promise<number> | null = null;
+
+const pruneOnce = (budget: number) => {
+  pruning ??= pruneOldest(budget).finally(() => {
+    pruning = null;
+  });
+  return pruning;
+};
+
+const makeRoom = (bytes: number) =>
+  pruneOnce(Math.floor(maxTotalBytes() * PRUNE_TARGET_RATIO) - bytes);
+
+const reserveBytes = async (bytes: number) => {
+  if (!isRedisReady()) return;
+  try {
+    const total = await redisClient.incrBy(TOTAL_BYTES_KEY, bytes);
+    if (total > maxTotalBytes()) {
+      await makeRoom(bytes);
+      await redisClient.incrBy(TOTAL_BYTES_KEY, bytes);
+    } else if (total === bytes) {
+      await pruneOnce(maxTotalBytes() - bytes);
+      await redisClient.incrBy(TOTAL_BYTES_KEY, bytes);
+    }
+  } catch (err) {
+    signale.error(err);
+  }
+};
+
 // A path segment can only be these characters, so it can never introduce a
 // separator or a "..". Checked here rather than trusting the caller.
 const SAFE_SEGMENT = /^[A-Za-z0-9_-]{1,255}$/;
 
 // Returns false if either segment is unusable or the resolved path escapes the
 // log root.
-export const writeReplayLog = (
+export const writeReplayLog = async (
   nickname: string,
   fileName: string,
   record: unknown,
-): boolean => {
+): Promise<boolean> => {
   if (retentionDays() === 0) return true;
   if (record === undefined || record === null) return true;
-
-  const serialized = JSON.stringify(record);
-  if (serialized === undefined || serialized.length > MAX_RECORD_CHARS) {
-    signale.warn(
-      `Skipped an oversized or unserializable replay from ${nickname}.`,
-    );
-    return true;
-  }
 
   if (!SAFE_SEGMENT.test(nickname) || !SAFE_SEGMENT.test(fileName)) {
     return false;
@@ -53,51 +179,39 @@ export const writeReplayLog = (
   if (!logDir.startsWith(logsRoot + path.sep)) {
     return false;
   }
+
+  const serialized = JSON.stringify(record);
+  if (serialized === undefined) return true;
+  const bytes = Buffer.byteLength(serialized);
+  await reserveBytes(bytes);
+
   const logFile = path.join(logDir, `${Date.now()}.json`);
-  fs.outputFile(logFile, serialized).catch((err) => signale.error(err));
+  try {
+    await fs.outputFile(logFile, serialized);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOSPC") {
+      signale.error(err);
+      return true;
+    }
+    await makeRoom(bytes);
+    await fs.outputFile(logFile, serialized).catch((retryErr) => {
+      signale.error(retryErr);
+    });
+  }
   return true;
 };
 
 export const cleanupReplayLogs = async () => {
   const days = retentionDays();
   const cutoff = Date.now() - days * MS_PER_DAY;
-  let removed = 0;
-
-  const walk = async (dir: string): Promise<number> => {
-    let remaining = 0;
-    let entries;
-    try {
-      entries = await fs.readdir(dir, { withFileTypes: true });
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") signale.error(err);
-      return 0;
-    }
-    for (const entry of entries) {
-      const target = path.join(dir, entry.name);
-      try {
-        if (entry.isDirectory()) {
-          const left = await walk(target);
-          if (left === 0) await fs.rmdir(target).catch(() => {});
-          else remaining += left;
-          continue;
-        }
-        const stat = await fs.stat(target);
-        if (stat.mtimeMs < cutoff) {
-          await fs.unlink(target);
-          removed++;
-        } else {
-          remaining++;
-        }
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== "ENOENT")
-          signale.error(err);
-      }
-    }
-    return remaining;
-  };
-
   try {
-    await walk(logsRoot);
+    const logs = await listLogFiles(logsRoot);
+    let removed = 0;
+    for (const log of logs) {
+      if (log.time < cutoff && (await removeLog(log))) removed++;
+    }
+    await removeEmptyDirs(logsRoot);
+    await pruneOldest(maxTotalBytes());
     if (removed) {
       signale.success(
         `Removed ${removed} replay log(s) older than ${days} day(s).`,
@@ -106,4 +220,9 @@ export const cleanupReplayLogs = async () => {
   } catch (err) {
     signale.error(err);
   }
+};
+
+export const ensureReplayLogTotal = async () => {
+  if (!isRedisReady() || (await redisClient.exists(TOTAL_BYTES_KEY))) return;
+  await cleanupReplayLogs();
 };
