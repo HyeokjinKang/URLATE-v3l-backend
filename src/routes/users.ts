@@ -230,8 +230,6 @@ router.put("/selectPreferences", requireLogin, async (req, res) => {
       );
     return;
   }
-  // Redis-only, so a failure just means the mirror is stale; the client keeps
-  // its localStorage copy either way.
   if (!(await writeSelectPreferences(userid, preferences))) {
     res
       .status(503)

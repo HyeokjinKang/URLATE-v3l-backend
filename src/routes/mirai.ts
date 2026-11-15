@@ -43,7 +43,6 @@ const respondWithFeed = async (
   feed: MiraiFeed,
   lang: string,
 ) => {
-  // Picks the locale path on MIRAI, so restricted to a whitelist.
   if (!NOTICE_LANGS.has(lang)) {
     rejectLang(res);
     return;
@@ -55,8 +54,6 @@ const respondWithFeed = async (
 
   let entries;
   try {
-    // Any limit is just a prefix of the same ordered list, so the longest one
-    // is cached once per feed and language and sliced per request.
     entries = await miraiFeed(feed, lang);
   } catch (e) {
     reportFailure(res, e);

@@ -4,7 +4,6 @@ import { isRedisReady, redisClient } from "./redis";
 
 const DEFAULT_TTL_SEC = 23 * 60 * 60;
 
-// Claims today's run of a once-daily job; only the lock winner gets true.
 // node-schedule runs per process, so PM2 cluster mode would otherwise fire the
 // job once per instance. Returns true if Redis is unavailable -- a duplicate
 // run beats no run at all.

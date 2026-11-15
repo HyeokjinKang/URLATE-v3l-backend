@@ -71,7 +71,6 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
     return;
   }
 
-  // Identity comes only from the session; the userid/username the client sent are ignored.
   const nickname: string = results[0].nickname;
 
   const fileName = req.body.fileName;

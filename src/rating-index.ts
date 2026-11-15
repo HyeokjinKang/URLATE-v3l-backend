@@ -31,8 +31,6 @@ export const setRating = async (userid: string | number, rating: number) => {
   }
 };
 
-// Rebuilds the index. Loads into a temp key and swaps it in with RENAME, so
-// the existing index keeps serving traffic while the rebuild is in progress.
 export const rebuild = async (rows: RatingRow[]) => {
   if (!isRedisReady() || !rows.length) return;
   try {

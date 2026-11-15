@@ -36,7 +36,6 @@ const FEED_PATHS: Record<MiraiFeed, string> = {
   blog: "/blog",
 };
 
-// Separate buckets so the two can be tuned apart in config.
 const FEED_CACHE_KINDS: Record<MiraiFeed, CacheKind> = {
   announcements: "notice",
   blog: "posts",

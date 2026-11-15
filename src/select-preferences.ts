@@ -19,8 +19,6 @@ export interface SelectPreferences {
 
 const PREFIX = "selectprefs:v1:";
 
-// Refreshed on every write, so an active player never loses the mirror while an
-// abandoned key eventually leaves Redis.
 const TTL_SEC = 60 * 60 * 24 * 180;
 
 // sortSelected() indexes [name, producer, difficulty, BPM].
@@ -37,8 +35,6 @@ const toIndex = (value: unknown, max: number): number | undefined => {
   return n;
 };
 
-// Unknown or out-of-range fields are dropped instead of defaulted: a missing
-// field means "the client had nothing", which is different from index 0.
 export const normalizeSelectPreferences = (
   input: unknown,
 ): SelectPreferences => {

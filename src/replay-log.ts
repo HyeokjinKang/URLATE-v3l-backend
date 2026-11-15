@@ -172,12 +172,8 @@ const reserveBytes = async (bytes: number) => {
   }
 };
 
-// A path segment can only be these characters, so it can never introduce a
-// separator or a "..". Checked here rather than trusting the caller.
 const SAFE_SEGMENT = /^[A-Za-z0-9_-]{1,255}$/;
 
-// Returns false if either segment is unusable or the resolved path escapes the
-// log root.
 export const writeReplayLog = async (
   nickname: string,
   fileName: string,
