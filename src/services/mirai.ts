@@ -1,5 +1,4 @@
 import { XMLParser } from "fast-xml-parser";
-import fetch from "node-fetch";
 
 import { CacheKind, getOrSet, keys } from "../cache";
 import config from "../config";
@@ -20,7 +19,7 @@ export interface MiraiEntry {
 // The most entries kept per feed. Every caller asks for a prefix of this.
 export const MIRAI_FEED_MAX = 20;
 
-// node-fetch has no default timeout: an unresponsive MIRAI would leave the
+// fetch has no default timeout: an unresponsive MIRAI would leave the
 // promise open and the socket held.
 const FEED_TIMEOUT_MS = 5000;
 
