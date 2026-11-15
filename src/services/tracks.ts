@@ -21,11 +21,6 @@ export const getAllTracks = () =>
     },
   );
 
-// Existence check before the cache layer. Cache keys come straight from request
-// parameters and empty results are stored, so querying nonexistent values would
-// pile up junk keys indefinitely -- and the nickname format allows effectively
-// unlimited combinations. Both checks reuse existing keys, so a normal request
-// incurs no extra lookup.
 export const trackExists = async (fileName: string): Promise<boolean> => {
   const tracks = await getAllTracks();
   return tracks.some((track) => track.fileName === fileName);

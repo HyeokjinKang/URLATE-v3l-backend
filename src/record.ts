@@ -18,10 +18,6 @@ export interface RecordSubmission {
   accuracy: number;
 }
 
-// Counts tracks (per difficulty) this user holds first place on. Computed per
-// lookup rather than kept in a column, since a counter would have to decrement
-// whoever was knocked out of first -- locking someone else's row inside the
-// submission transaction. Ties count for both sides, matching leaderboard rank.
 // Needs the (filename, difficulty, isBest, record) index; see schema/indexes.sql.
 export const countFirstPlaces = async (nickname: string): Promise<number> => {
   const [row] = await knex({ mine: "trackRecords" })

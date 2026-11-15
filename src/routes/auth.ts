@@ -168,7 +168,6 @@ router.post(
         // account that just registered right after a sync.
         await syncEmail(payload);
 
-        // Regenerate the session ID on successful auth to prevent session fixation.
         req.session.regenerate((regenErr) => {
           if (regenErr) {
             signale.error(regenErr);
