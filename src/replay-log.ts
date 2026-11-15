@@ -14,8 +14,6 @@ const DEFAULT_RETENTION_DAYS = 14;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-const DEFAULT_MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
-
 const PRUNE_TARGET_RATIO = 0.9;
 
 const FLUSH_INTERVAL_MS = 5 * 60 * 1000;
@@ -48,18 +46,6 @@ export const retentionDays = (): number => {
     return Math.floor(configured);
   }
   return DEFAULT_RETENTION_DAYS;
-};
-
-export const maxTotalBytes = (): number => {
-  const configured = config.project.replayLogMaxBytes;
-  if (
-    typeof configured === "number" &&
-    Number.isFinite(configured) &&
-    configured >= 0
-  ) {
-    return Math.floor(configured);
-  }
-  return DEFAULT_MAX_TOTAL_BYTES;
 };
 
 type LogEntry = { rel: string; time: number; size: number };
@@ -235,106 +221,63 @@ const adoptLegacyLogs = async () => {
 
 // ---- Remote storage ----------------------------------------------------------
 
-let stored: LogEntry[] = [];
-let storedBytes = 0;
-let uploadedDuringScan: LogEntry[] | null = null;
-
-const addStored = (entry: LogEntry) => {
-  uploadedDuringScan?.push(entry);
-  stored.push(entry);
-  storedBytes += entry.size;
-  if (stored.length > 1 && stored[stored.length - 2].time > entry.time)
-    stored.sort(byTime);
-};
-
-const scanStorage = async (zone: BunnyZone) => {
-  const out: LogEntry[] = [];
+const listDays = async (zone: BunnyZone) => {
   const days: string[] = [];
   for (const object of await listObjects(zone, remoteDir(""))) {
     if (object.IsDirectory && DAY_NAME.test(object.ObjectName))
       days.push(object.ObjectName);
   }
-  for (const day of days.sort()) {
-    for (const kind of KINDS) {
-      for (const object of await listObjects(
-        zone,
-        remoteDir(`${day}/${kind}`),
-      )) {
-        const time = timeOf(object.ObjectName);
-        if (object.IsDirectory || time === null) continue;
-        out.push({
-          rel: `${day}/${kind}/${object.ObjectName}`,
-          time,
-          size: object.Length,
-        });
+  return days.sort();
+};
+
+const removeExpiredInDay = async (
+  zone: BunnyZone,
+  day: string,
+  cutoff: number,
+) => {
+  let removed = 0;
+  for (const kind of KINDS) {
+    for (const object of await listObjects(zone, remoteDir(`${day}/${kind}`))) {
+      const time = timeOf(object.ObjectName);
+      if (object.IsDirectory || time === null || time >= cutoff) continue;
+      try {
+        await deleteObject(
+          zone,
+          remotePath(`${day}/${kind}/${object.ObjectName}`),
+        );
+        removed++;
+      } catch (err) {
+        signale.error(err);
       }
     }
   }
-  return { days, entries: out.sort(byTime) };
+  return removed;
 };
 
-const rebuildStored = async (zone: BunnyZone) => {
-  const uploaded: LogEntry[] = [];
-  uploadedDuringScan = uploaded;
-  let scanned;
-  try {
-    scanned = await scanStorage(zone);
-  } finally {
-    uploadedDuringScan = null;
-  }
-  const { days, entries } = scanned;
-  const known = new Set(entries.map((entry) => entry.rel));
-  for (const entry of uploaded) {
-    if (!known.has(entry.rel)) entries.push(entry);
-  }
-  stored = entries.sort(byTime);
-  storedBytes = stored.reduce((sum, entry) => sum + entry.size, 0);
-  return days;
-};
-
-const pruneStored = async (zone: BunnyZone, budget: number) => {
+const removeExpiredStored = async (zone: BunnyZone, cutoff: number) => {
+  const cutoffDay = dayOf(cutoff);
   let removed = 0;
-  while (storedBytes > budget && stored.length) {
-    const entry = stored[0];
+  for (const day of await listDays(zone)) {
+    if (day > cutoffDay) break;
+    if (day === cutoffDay) {
+      removed += await removeExpiredInDay(zone, day, cutoff);
+      continue;
+    }
     try {
-      await deleteObject(zone, remotePath(entry.rel));
+      await deleteObject(zone, remoteDir(day));
+      removed++;
     } catch (err) {
       signale.error(err);
-      break;
     }
-    stored.shift();
-    storedBytes -= entry.size;
-    removed++;
   }
-  if (removed) {
-    signale.warn(
-      `Removed ${removed} oldest replay log(s) to stay under ${maxTotalBytes()} bytes.`,
-    );
-  }
+  return removed;
 };
 
-let pruning: Promise<void> | null = null;
-
-const makeRoom = (zone: BunnyZone) => {
-  if (storedBytes <= maxTotalBytes()) return Promise.resolve();
-  pruning ??= pruneStored(
-    zone,
-    Math.floor(maxTotalBytes() * PRUNE_TARGET_RATIO),
-  ).finally(() => {
-    pruning = null;
-  });
-  return pruning;
-};
-
-const upload = async (
+const upload = (
   zone: BunnyZone,
   entry: LogEntry,
   body: Uint8Array<ArrayBuffer>,
-) => {
-  await putObject(zone, remotePath(entry.rel), body, "application/json");
-  addStored(entry);
-  await makeRoom(zone);
-};
+) => putObject(zone, remotePath(entry.rel), body, "application/json");
 
 let flushing: Promise<void> | null = null;
 
@@ -425,18 +368,13 @@ export const writeReplayLog = async (
     }
   }
 
-  if (storage) {
-    flushReplayLogs().catch((err) => signale.error(err));
-  } else if (spooledBytes > maxTotalBytes()) {
-    await pruneSpool(Math.floor(maxTotalBytes() * PRUNE_TARGET_RATIO));
-  }
+  if (storage) flushReplayLogs().catch((err) => signale.error(err));
   return true;
 };
 
 export const cleanupReplayLogs = async () => {
   const days = retentionDays();
   const cutoff = cutoffTime();
-  const cutoffDay = dayOf(cutoff);
   let removed = 0;
 
   for (const entry of [...spooled]) {
@@ -444,39 +382,11 @@ export const cleanupReplayLogs = async () => {
   }
   await removeEmptySpoolDirs();
 
-  if (storage) {
-    const remoteDays = await rebuildStored(storage);
-    for (const day of remoteDays) {
-      if (day >= cutoffDay) continue;
-      try {
-        await deleteObject(storage, remoteDir(day));
-      } catch (err) {
-        signale.error(err);
-        continue;
-      }
-      const left = stored.filter((entry) => !entry.rel.startsWith(`${day}/`));
-      removed += stored.length - left.length;
-      stored = left;
-    }
-    for (const entry of stored.filter((entry) => entry.time < cutoff)) {
-      try {
-        await deleteObject(storage, remotePath(entry.rel));
-      } catch (err) {
-        signale.error(err);
-        continue;
-      }
-      stored.splice(stored.indexOf(entry), 1);
-      removed++;
-    }
-    storedBytes = stored.reduce((sum, entry) => sum + entry.size, 0);
-    await pruneStored(storage, maxTotalBytes());
-  } else {
-    await pruneSpool(maxTotalBytes());
-  }
+  if (storage) removed += await removeExpiredStored(storage, cutoff);
 
   if (removed) {
     signale.success(
-      `Removed ${removed} replay log(s) older than ${days} day(s).`,
+      `Removed ${removed} expired replay log(s) or day folder(s) older than ${days} day(s).`,
     );
   }
 };
@@ -489,11 +399,6 @@ export const initReplayLogs = async () => {
       "replayStorage is not configured, replay logs are kept only in logs-pending.",
     );
     return;
-  }
-  try {
-    await rebuildStored(storage);
-  } catch (err) {
-    signale.error(err);
   }
   await flushReplayLogs();
   setInterval(() => {
