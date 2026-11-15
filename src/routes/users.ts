@@ -245,20 +245,10 @@ router.put("/selectPreferences", requireLogin, async (req, res) => {
   res.status(200).json(createSuccessResponse("success"));
 });
 
-// Per-element authorization policy.
-// - user   : changeable with the caller's own session or a valid secret
-// - service: requires a valid secret. Must arrive together with an NSFW
-//            classification result, so a session alone isn't enough.
-const PROFILE_ELEMENT_POLICY: Record<string, "user" | "service"> = {
-  alias: "user",
-  banner: "user",
-  background: "service",
-  picture: "service",
-};
+const PROFILE_ELEMENTS = new Set(["alias", "banner"]);
 
 router.put("/profile/:element", async (req, res) => {
-  const policy = PROFILE_ELEMENT_POLICY[req.params.element];
-  if (!policy) {
+  if (!PROFILE_ELEMENTS.has(req.params.element)) {
     res
       .status(400)
       .json(
@@ -271,8 +261,8 @@ router.put("/profile/:element", async (req, res) => {
     return;
   }
 
-  const hasValidSecret = isValidSecret(req.body.secret);
-  const isService = hasValidSecret && typeof req.body.userid === "string";
+  const isService =
+    isValidSecret(req.body.secret) && typeof req.body.userid === "string";
   const userid: string | undefined = req.session.userid
     ? req.session.userid
     : isService
@@ -292,22 +282,9 @@ router.put("/profile/:element", async (req, res) => {
     return;
   }
 
-  if (policy === "service" && !hasValidSecret) {
-    res
-      .status(403)
-      .json(
-        createErrorResponse(
-          "failed",
-          "Authorize failed",
-          "Project secret key is not valid.",
-        ),
-      );
-    return;
-  }
-
   try {
     const users = await knex("users")
-      .select("explicit", "ownedAlias", "banner", "nickname")
+      .select("ownedAlias", "banner", "nickname")
       .where("userid", userid);
     if (!users.length) {
       res
@@ -317,8 +294,6 @@ router.put("/profile/:element", async (req, res) => {
         );
       return;
     }
-    // explicit bitfield: 2=background, 1=picture.
-    let explicit = Number(users[0].explicit);
     switch (req.params.element) {
       case "alias": {
         const ownedAlias = parseJson<number[]>(users[0].ownedAlias) ?? [];
@@ -338,18 +313,6 @@ router.put("/profile/:element", async (req, res) => {
         await knex("users").update({ alias: selected }).where("userid", userid);
         break;
       }
-      case "background":
-        explicit = req.body.explicit ? explicit | 2 : explicit & ~2;
-        await knex("users")
-          .update({ background: req.body.value, explicit })
-          .where("userid", userid);
-        break;
-      case "picture":
-        explicit = req.body.explicit ? explicit | 1 : explicit & ~1;
-        await knex("users")
-          .update({ picture: req.body.value, explicit })
-          .where("userid", userid);
-        break;
       case "banner": {
         // Only allows toggling visibility (the "(-)" marker); the owned set itself can't change.
         const submitted: unknown =

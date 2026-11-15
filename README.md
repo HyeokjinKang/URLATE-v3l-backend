@@ -1,12 +1,13 @@
 ## URLATE-v3l-backend
 
-REST API server for [URLATE](https://github.com/HyeokjinKang/URLATE). It handles Google sign-in, sessions, user profiles and settings, track and record data, rankings, and the MIRAI announcement feeds.
+REST API server for [URLATE](https://github.com/HyeokjinKang/URLATE). It handles Google sign-in, sessions, user profiles and settings, profile image uploads, track and record data, rankings, and the MIRAI announcement feeds.
 
 ### Requirements
 
 - Node.js 24 and pnpm 12
 - MySQL
 - Redis, shared with the [game server](https://github.com/HyeokjinKang/URLATE-v3l-game) for sessions
+- A BunnyCDN storage zone and a hosted NSFWJS model for profile images
 
 ### Setup
 

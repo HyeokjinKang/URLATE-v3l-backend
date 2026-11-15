@@ -6,6 +6,7 @@ import config from "./config";
 import { knex } from "./db";
 import { scheduleJobs } from "./jobs";
 import { redisClient } from "./redis";
+import { initProfileImage } from "./services/profile-image";
 import { rebuildRatingIndexIfNeeded } from "./services/rating-bootstrap";
 
 process.on("unhandledRejection", (reason) => {
@@ -63,6 +64,13 @@ const start = async () => {
   }
 
   rebuildRatingIndexIfNeeded().catch((err) => signale.error(err));
+
+  initProfileImage().catch((err) => {
+    signale.error(
+      "Failed to load the NSFW model, profile image upload is disabled.",
+    );
+    signale.error(err);
+  });
 
   scheduleJobs();
 

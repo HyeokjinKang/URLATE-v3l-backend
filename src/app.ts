@@ -9,6 +9,7 @@ import { sessionMiddleware } from "./middleware/session";
 import { router as authRouter } from "./routes/auth";
 import { router as couponRouter } from "./routes/coupon";
 import { router as miraiRouter } from "./routes/mirai";
+import { router as profileImageRouter } from "./routes/profile-image";
 import { router as rankingRouter } from "./routes/ranking";
 import { router as recordsRouter } from "./routes/records";
 import { router as tracksRouter } from "./routes/tracks";
@@ -40,6 +41,7 @@ app.get("/", (req, res) => {
 
 app.use(authRouter);
 app.use(usersRouter);
+app.use(profileImageRouter);
 app.use(tracksRouter);
 app.use(recordsRouter);
 app.use(couponRouter);
