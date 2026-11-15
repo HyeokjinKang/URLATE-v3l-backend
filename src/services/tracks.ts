@@ -9,6 +9,7 @@ export const TRACK_COLUMNS = [
   "bpm",
   "difficulty",
   "originalName",
+  "type",
 ];
 
 export const getAllTracks = () =>
