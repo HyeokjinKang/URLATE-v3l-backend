@@ -54,6 +54,12 @@
           "description": "게임 서버가 호스트 될 URL입니다. 슬래시로 끝나면 안되는 것에 주의합니다",
           "examples": ["https://game.example.com"]
         },
+        "nsfw": {
+          "type": "string",
+          "format": "uri",
+          "description": "프로필 이미지 선정성 판정에 쓸 NSFWJS 모델이 호스트된 URL입니다. 이 주소 아래 /mobilenet_v2/에서 모델을 불러옵니다. 슬래시로 끝나면 안되는 것에 주의합니다. 설정하지 않으면 프로필 이미지를 올릴 수 없습니다.",
+          "examples": ["https://nsfw.example.com"]
+        },
         "mirai": {
           "type": "string",
           "format": "uri",
@@ -304,6 +310,37 @@
               "examples": [3600]
             }
           }
+        }
+      }
+    },
+    "bunny": {
+      "title": "BunnyCDN Storage",
+      "description": "프로필 이미지를 저장할 BunnyCDN 스토리지 존 설정입니다. 생략하면 프로필 이미지를 올릴 수 없습니다.",
+
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint", "storageZone", "accessKey"],
+
+      "properties": {
+        "endpoint": {
+          "type": "string",
+          "format": "hostname",
+          "description": "스토리지 존 리전의 API 호스트입니다.",
+          "examples": ["storage.bunnycdn.com"]
+        },
+        "storageZone": {
+          "type": "string",
+          "description": "스토리지 존 이름입니다.",
+          "examples": ["example-zone"]
+        },
+        "accessKey": {
+          "type": "string",
+          "description": "스토리지 존 비밀번호(FTP & API Access의 Password)입니다."
+        },
+        "path": {
+          "type": "string",
+          "description": "스토리지 존 안에서 프로필 이미지를 둘 폴더입니다. project.cdn 아래 같은 경로로 공개됩니다. 설정하지 않으면 profiles를 사용합니다.",
+          "examples": ["profiles"]
         }
       }
     },

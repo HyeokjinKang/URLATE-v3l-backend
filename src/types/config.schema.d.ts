@@ -18,6 +18,7 @@ export interface URLATEConfig {
   redis: Redis;
   session: Session;
   cache?: Cache;
+  bunny?: BunnyCDNStorage;
   google: GoogleAPI;
 }
 /**
@@ -44,6 +45,10 @@ export interface Project {
    * 게임 서버가 호스트 될 URL입니다. 슬래시로 끝나면 안되는 것에 주의합니다
    */
   game: string;
+  /**
+   * 프로필 이미지 선정성 판정에 쓸 NSFWJS 모델이 호스트된 URL입니다. 이 주소 아래 /mobilenet_v2/에서 모델을 불러옵니다. 슬래시로 끝나면 안되는 것에 주의합니다. 설정하지 않으면 프로필 이미지를 올릴 수 없습니다.
+   */
+  nsfw?: string;
   /**
    * 공지를 가져올 MIRAI(Docusaurus) 사이트의 URL입니다. 슬래시로 끝나면 안되는 것에 주의합니다. 설정하지 않으면 https://mirai.urlate.coupy.dev를 사용합니다.
    */
@@ -213,6 +218,27 @@ export interface CacheTTL {
    * 업적 마스터 데이터 캐시 TTL입니다.
    */
   achievements?: number;
+}
+/**
+ * 프로필 이미지를 저장할 BunnyCDN 스토리지 존 설정입니다. 생략하면 프로필 이미지를 올릴 수 없습니다.
+ */
+export interface BunnyCDNStorage {
+  /**
+   * 스토리지 존 리전의 API 호스트입니다.
+   */
+  endpoint: string;
+  /**
+   * 스토리지 존 이름입니다.
+   */
+  storageZone: string;
+  /**
+   * 스토리지 존 비밀번호(FTP & API Access의 Password)입니다.
+   */
+  accessKey: string;
+  /**
+   * 스토리지 존 안에서 프로필 이미지를 둘 폴더입니다. project.cdn 아래 같은 경로로 공개됩니다. 설정하지 않으면 profiles를 사용합니다.
+   */
+  path?: string;
 }
 /**
  * Google API 설정입니다.

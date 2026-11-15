@@ -6,6 +6,7 @@
     "api": "https://api.example.com",
     "cdn": "https://cdn.example.com",
     "game": "https://game.example.com",
+    "nsfw": "https://nsfw.example.com",
     "mirai": "https://mirai.urlate.coupy.dev",
     "secretKey": "Something Random",
     "port": 8080,
@@ -51,6 +52,12 @@
       "profile": 30,
       "achievements": 3600
     }
+  },
+  "bunny": {
+    "endpoint": "storage.bunnycdn.com",
+    "storageZone": "example-zone",
+    "accessKey": "Storage Zone Password",
+    "path": "profiles"
   },
   "google": {
     "clientId": "GOOGLE CLIENT ID",
