@@ -59,6 +59,11 @@
     "accessKey": "Storage Zone Password",
     "path": "profiles"
   },
+  "replayStorage": {
+    "endpoint": "sg.storage.bunnycdn.com",
+    "storageZone": "example-replays",
+    "accessKey": "Storage Zone Password"
+  },
   "google": {
     "clientId": "GOOGLE CLIENT ID",
     "clientSecret": "GOOGLE CLIENT SECRET"

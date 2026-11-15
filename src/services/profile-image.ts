@@ -7,6 +7,7 @@ import sharp from "sharp";
 import signale from "signale";
 
 import config from "../config";
+import { deleteObject, putObject } from "./bunny-storage";
 
 export type ProfileImageType = "picture" | "background";
 
@@ -26,7 +27,6 @@ const MAX_INPUT_PIXELS = 40_000_000;
 const ALLOWED_FORMATS = new Set(["jpeg", "png", "webp", "gif"]);
 const CLASSIFY_SIZE = 512;
 const SAFE_CLASSES = new Set(["Drawing", "Neutral"]);
-const BUNNY_TIMEOUT_MS = 15000;
 
 const PROFILE_FILENAME =
   /^[0-9]+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.webp$/;
@@ -60,37 +60,21 @@ export const initProfileImage = async () => {
   signale.success("NSFW model loaded.");
 };
 
-const bunnyStorageUrl = (filename: string) => {
-  const bunny = config.bunny!;
-  return `https://${bunny.endpoint}/${bunny.storageZone}/${BUNNY_PATH}/${filename}`;
-};
+const storagePath = (filename: string) => `${BUNNY_PATH}/${filename}`;
 
 export const publicUrl = (filename: string) =>
   `${config.project.cdn}/${BUNNY_PATH}/${filename}`;
 
-export const uploadToBunny = async (filename: string, buffer: Buffer) => {
-  const response = await fetch(bunnyStorageUrl(filename), {
-    method: "PUT",
-    headers: {
-      AccessKey: config.bunny!.accessKey,
-      "Content-Type": "image/webp",
-    },
-    body: new Uint8Array(buffer),
-    signal: AbortSignal.timeout(BUNNY_TIMEOUT_MS),
-  });
-  if (!response.ok)
-    throw new Error(`BunnyCDN storage responded with ${response.status}`);
-};
+export const uploadToBunny = (filename: string, buffer: Buffer) =>
+  putObject(
+    config.bunny!,
+    storagePath(filename),
+    new Uint8Array(buffer),
+    "image/webp",
+  );
 
-export const deleteFromBunny = async (filename: string) => {
-  const response = await fetch(bunnyStorageUrl(filename), {
-    method: "DELETE",
-    headers: { AccessKey: config.bunny!.accessKey },
-    signal: AbortSignal.timeout(BUNNY_TIMEOUT_MS),
-  });
-  if (!response.ok && response.status !== 404)
-    throw new Error(`BunnyCDN storage responded with ${response.status}`);
-};
+export const deleteFromBunny = (filename: string) =>
+  deleteObject(config.bunny!, storagePath(filename));
 
 export const deleteQuietly = (filename: string | null) => {
   if (!filename) return;
