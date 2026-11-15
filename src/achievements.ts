@@ -1,4 +1,3 @@
-import fetch from "node-fetch";
 import signale from "signale";
 
 import config from "./config";
@@ -217,7 +216,7 @@ const runObserver = async (userid: string, context: string, data?: Data) => {
         secret: config.project.secretKey,
         achievement: achievementsList,
       }),
-      // node-fetch has no default timeout: an unresponsive game server would
+      // fetch has no default timeout: an unresponsive game server would
       // leave the promise open and the socket held.
       signal: AbortSignal.timeout(GAME_SERVER_TIMEOUT_MS),
     }).catch((err) => {

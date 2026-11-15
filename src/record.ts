@@ -1,5 +1,5 @@
+import { randomUUID } from "node:crypto";
 import signale from "signale";
-import { v4 } from "uuid";
 
 import { knex } from "./db";
 import { invalidate, invalidateGroup, keys } from "./cache";
@@ -46,7 +46,7 @@ const MEDAL_FC = 2;
 const MEDAL_AP = 4;
 
 const uuid = () => {
-  const tokens = v4().split("-");
+  const tokens = randomUUID().split("-");
   return tokens[2] + tokens[1] + tokens[0] + tokens[3] + tokens[4];
 };
 
