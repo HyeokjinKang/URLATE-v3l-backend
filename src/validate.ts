@@ -21,8 +21,6 @@ export const toFiniteNonNegInt = (value: unknown): number | null => {
 
 export const MAX_SCORE = 200_000_000;
 
-export const RANKS = new Set(["SS", "S", "A", "B", "C", "F"]);
-
 export const SORT_DIRECTIONS = new Set(["asc", "desc"]);
 
 // Fed directly into orderBy, so a whitelist is required to prevent identifier injection.
@@ -36,9 +34,6 @@ export const TRACK_ORDER_COLUMNS = new Set([
 
 // Used to build column names (e.g. title_ko), so a whitelist is required.
 export const NOTICE_LANGS = new Set(["ko", "en"]);
-
-export const isValidRecordIndex = (value: unknown): value is string =>
-  typeof value === "string" && /^[0-9a-f]{32}$/.test(value);
 
 export const MAX_DIFFICULTY_SELECTION = 20;
 

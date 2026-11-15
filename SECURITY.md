@@ -8,8 +8,9 @@
 
 백엔드는 HTTPS를 종단하는 리버스 프록시(nginx 등) 뒤에서 동작하는 것을 전제로 합니다.
 
-- 애플리케이션은 `app.set("trust proxy", 1)`로 설정되어 있어, 프록시가 전달하는
-  `X-Forwarded-Proto` 헤더를 신뢰해 세션 쿠키의 `secure` 플래그가 정상 동작합니다.
+- 애플리케이션은 `config.project.trustProxy`(기본값 1)만큼의 프록시 홉을 신뢰해,
+  프록시가 전달하는 `X-Forwarded-Proto` 헤더로 세션 쿠키의 `secure` 플래그가
+  정상 동작합니다. 앞단 프록시 수와 같게 설정해야 합니다.
 - 따라서 프록시는 **반드시 `X-Forwarded-Proto`(및 `X-Forwarded-For`)를 올바르게
   전달**해야 합니다. 그렇지 않으면 production 모드에서 secure 쿠키가 설정되지 않아
   로그인이 실패할 수 있습니다.
@@ -71,8 +72,7 @@ proxy_set_header Host              $host;
   변경 요청에 `Origin`을 반드시 붙이므로, 이 경우는 서버 간 호출이며 해당
   경로는 project secret으로 따로 인증합니다.
 - `GET /auth/logout`은 최상위 내비게이션용이라 GET을 유지하지만, 출처를 직접
-  확인해 로그아웃 CSRF를 막습니다. 새 클라이언트는 `POST /auth/logout`을
-  쓰세요.
+  확인해 로그아웃 CSRF를 막습니다.
 - 프록시가 `Origin`/`Referer` 헤더를 제거하면 안 됩니다.
 
 ## 5. Rate limiting
