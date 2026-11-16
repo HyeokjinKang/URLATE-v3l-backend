@@ -164,61 +164,6 @@ const writeSpool = async (entry: LogEntry, body: string) => {
   spooledBytes += entry.size;
 };
 
-// ---- Legacy logs -------------------------------------------------------------
-
-// TODO: Remove once production has moved logs/ and logs-unverified/ to storage.
-const legacyRoots = [
-  { root: path.resolve(__dirname, "../logs"), verified: true },
-  { root: path.resolve(__dirname, "../logs-unverified"), verified: false },
-];
-
-const LEGACY_NAME = /^(\d{1,16})\.json$/;
-
-const adoptLegacyLogs = async () => {
-  const cutoff = cutoffTime();
-  let moved = 0;
-  let expired = 0;
-  for (const { root, verified } of legacyRoots) {
-    for (const user of await readDir(root)) {
-      if (!user.isDirectory() || !SAFE_SEGMENT.test(user.name)) continue;
-      const userDir = path.join(root, user.name);
-      for (const track of await readDir(userDir)) {
-        if (!track.isDirectory() || !SAFE_SEGMENT.test(track.name)) continue;
-        const trackDir = path.join(userDir, track.name);
-        for (const file of await readDir(trackDir)) {
-          const match = LEGACY_NAME.exec(file.name);
-          const source = path.join(trackDir, file.name);
-          try {
-            if (!file.isFile() || !match) continue;
-            const time = Number(match[1]);
-            if (time < cutoff) {
-              await fs.unlink(source);
-              expired++;
-              continue;
-            }
-            const target = spoolFile(
-              replayLogPath(user.name, track.name, time, verified),
-            );
-            await fs.mkdir(path.dirname(target), { recursive: true });
-            await fs.rename(source, target);
-            moved++;
-          } catch (err) {
-            signale.error(err);
-          }
-        }
-        await fs.rmdir(trackDir).catch(() => {});
-      }
-      await fs.rmdir(userDir).catch(() => {});
-    }
-    await fs.rmdir(root).catch(() => {});
-  }
-  if (moved || expired) {
-    signale.info(
-      `Moved ${moved} legacy replay log(s) to logs-pending, removed ${expired} expired.`,
-    );
-  }
-};
-
 // ---- Remote storage ----------------------------------------------------------
 
 const listDays = async (zone: BunnyZone) => {
@@ -392,7 +337,6 @@ export const cleanupReplayLogs = async () => {
 };
 
 export const initReplayLogs = async () => {
-  await adoptLegacyLogs();
   await scanSpool();
   if (!storage) {
     signale.warn(
