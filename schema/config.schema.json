@@ -87,12 +87,6 @@
           "description": "플레이 리플레이 로그를 보관할 일수입니다. 0이면 로그를 남기지 않습니다. 설정하지 않으면 14일간 보관한 뒤 자동 삭제합니다.",
           "examples": [14]
         },
-        "replayLogMaxBytes": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "리플레이 로그 디렉터리 전체 용량 한도(바이트)입니다. 넘으면 오래된 로그부터 지웁니다. 설정하지 않으면 2GiB입니다.",
-          "examples": [2147483648]
-        },
         "trustProxy": {
           "type": "integer",
           "minimum": 0,
@@ -341,6 +335,37 @@
           "type": "string",
           "description": "스토리지 존 안에서 프로필 이미지를 둘 폴더입니다. project.cdn 아래 같은 경로로 공개됩니다. 설정하지 않으면 profiles를 사용합니다.",
           "examples": ["profiles"]
+        }
+      }
+    },
+    "replayStorage": {
+      "title": "Replay Log Storage",
+      "description": "리플레이 로그를 저장할 BunnyCDN 스토리지 존 설정입니다. 프로필 이미지와 다른 존을 쓰고, Pull Zone을 연결하지 않습니다. 생략하면 리플레이 로그를 서버의 logs-pending에만 보관합니다.",
+
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint", "storageZone", "accessKey"],
+
+      "properties": {
+        "endpoint": {
+          "type": "string",
+          "format": "hostname",
+          "description": "스토리지 존 리전의 API 호스트입니다.",
+          "examples": ["sg.storage.bunnycdn.com"]
+        },
+        "storageZone": {
+          "type": "string",
+          "description": "스토리지 존 이름입니다.",
+          "examples": ["example-replays"]
+        },
+        "accessKey": {
+          "type": "string",
+          "description": "스토리지 존 비밀번호(FTP & API Access의 Password)입니다."
+        },
+        "path": {
+          "type": "string",
+          "description": "스토리지 존 안에서 리플레이 로그를 둘 폴더입니다. 설정하지 않으면 존 최상위에 둡니다.",
+          "examples": ["replays"]
         }
       }
     },

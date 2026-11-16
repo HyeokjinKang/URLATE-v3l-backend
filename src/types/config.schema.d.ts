@@ -19,6 +19,7 @@ export interface URLATEConfig {
   session: Session;
   cache?: Cache;
   bunny?: BunnyCDNStorage;
+  replayStorage?: ReplayLogStorage;
   google: GoogleAPI;
 }
 /**
@@ -66,10 +67,6 @@ export interface Project {
    * 플레이 리플레이 로그를 보관할 일수입니다. 0이면 로그를 남기지 않습니다. 설정하지 않으면 14일간 보관한 뒤 자동 삭제합니다.
    */
   replayLogRetentionDays?: number;
-  /**
-   * 리플레이 로그 디렉터리 전체 용량 한도(바이트)입니다. 넘으면 오래된 로그부터 지웁니다. 설정하지 않으면 2GiB입니다.
-   */
-  replayLogMaxBytes?: number;
   /**
    * 이 서버 앞에 있는 신뢰할 수 있는 프록시의 홉 수입니다. X-Forwarded-For에서 뒤로부터 이 개수만큼을 건너뛴 주소를 클라이언트 주소로 씁니다. 실제 홉 수와 정확히 맞춰야 합니다. 적으면 레이트리밋이 프록시 주소 하나에 묶이고, 많으면 클라이언트가 헤더로 주소를 위조할 수 있습니다. 설정하지 않으면 CDN + 리버스 프록시 2홉으로 간주합니다.
    */
@@ -237,6 +234,27 @@ export interface BunnyCDNStorage {
   accessKey: string;
   /**
    * 스토리지 존 안에서 프로필 이미지를 둘 폴더입니다. project.cdn 아래 같은 경로로 공개됩니다. 설정하지 않으면 profiles를 사용합니다.
+   */
+  path?: string;
+}
+/**
+ * 리플레이 로그를 저장할 BunnyCDN 스토리지 존 설정입니다. 프로필 이미지와 다른 존을 쓰고, Pull Zone을 연결하지 않습니다. 생략하면 리플레이 로그를 서버의 logs-pending에만 보관합니다.
+ */
+export interface ReplayLogStorage {
+  /**
+   * 스토리지 존 리전의 API 호스트입니다.
+   */
+  endpoint: string;
+  /**
+   * 스토리지 존 이름입니다.
+   */
+  storageZone: string;
+  /**
+   * 스토리지 존 비밀번호(FTP & API Access의 Password)입니다.
+   */
+  accessKey: string;
+  /**
+   * 스토리지 존 안에서 리플레이 로그를 둘 폴더입니다. 설정하지 않으면 존 최상위에 둡니다.
    */
   path?: string;
 }
