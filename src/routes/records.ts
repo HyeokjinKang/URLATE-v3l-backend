@@ -13,6 +13,7 @@ import {
   getPatternStats,
   toPlaybackRate,
 } from "../pattern-stats";
+import { checkPlaySession, withExpectedMs } from "../play-session";
 import { submitRecord } from "../record";
 import {
   isReplayRecord,
@@ -93,6 +94,8 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
     return;
   }
 
+  let session: ReturnType<typeof withExpectedMs> | null = null;
+
   const log = (verdict: ReplayVerdict, verified = false) =>
     writeReplayLog(
       nickname,
@@ -102,6 +105,7 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
         { userid, nickname },
         verdict,
         req.get("user-agent") ?? null,
+        session,
       ),
       verified,
     );
@@ -165,6 +169,17 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
       );
     return;
   }
+
+  session = withExpectedMs(
+    await checkPlaySession(req.body.playId, {
+      userid,
+      fileName,
+      difficultySelection,
+      rate,
+    }),
+    req.body.record,
+    rate,
+  );
 
   const totalJudge = perfect + great + good + bad + miss + bullet;
   if (totalJudge === 0 || score > MAX_SCORE) {
