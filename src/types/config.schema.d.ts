@@ -64,7 +64,7 @@ export interface Project {
   host?: string;
   secretKey: string;
   /**
-   * 플레이 리플레이 로그를 보관할 일수입니다. 0이면 로그를 남기지 않습니다. 설정하지 않으면 14일간 보관한 뒤 자동 삭제합니다.
+   * 플레이 리플레이 로그를 보관할 일수입니다. 0이면 로그를 남기지 않습니다. 설정하지 않으면 30일간 보관한 뒤 자동 삭제합니다.
    */
   replayLogRetentionDays?: number;
   /**

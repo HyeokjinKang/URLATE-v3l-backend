@@ -10,7 +10,7 @@ import {
   putObject,
 } from "./services/bunny-storage";
 
-const DEFAULT_RETENTION_DAYS = 14;
+const DEFAULT_RETENTION_DAYS = 30;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
