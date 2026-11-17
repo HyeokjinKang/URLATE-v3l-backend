@@ -266,6 +266,58 @@ export const flushReplayLogs = () => {
 
 // ---- Public API --------------------------------------------------------------
 
+const SUBMITTED_FIELDS = [
+  "difficultySelection",
+  "rank",
+  "score",
+  "maxCombo",
+  "rate",
+  "accuracy",
+  "perfect",
+  "great",
+  "good",
+  "bad",
+  "miss",
+  "bullet",
+] as const;
+
+export type ReplayVerdict =
+  | "ok"
+  | "no-record"
+  | "format"
+  | "range"
+  | "rank"
+  | "unknown-track"
+  | "pattern-unavailable"
+  | "pattern";
+
+/** True for the v2 replay object (`{ v, events: [] }`) and for the legacy bare event array. */
+export const isReplayRecord = (record: unknown): boolean =>
+  Array.isArray(record) ||
+  (typeof record === "object" &&
+    record !== null &&
+    Array.isArray((record as { events?: unknown }).events));
+
+/** The stored replay log: what the server knew about the submission, with the client replay under `replay`. */
+export const replayEnvelope = (
+  body: Record<string, unknown>,
+  user: { userid: string; nickname: string },
+  verdict: ReplayVerdict,
+  userAgent: string | null,
+) => ({
+  v: 2,
+  receivedAt: Date.now(),
+  userid: user.userid,
+  nickname: user.nickname,
+  fileName: body.fileName ?? null,
+  verdict,
+  userAgent,
+  submitted: Object.fromEntries(
+    SUBMITTED_FIELDS.map((key) => [key, body[key] ?? null]),
+  ),
+  replay: body.record ?? null,
+});
+
 export const writeReplayLog = async (
   nickname: string,
   fileName: string,

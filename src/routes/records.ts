@@ -14,7 +14,12 @@ import {
   toPlaybackRate,
 } from "../pattern-stats";
 import { submitRecord } from "../record";
-import { writeReplayLog } from "../replay-log";
+import {
+  isReplayRecord,
+  replayEnvelope,
+  ReplayVerdict,
+  writeReplayLog,
+} from "../replay-log";
 import { notFound } from "../respond";
 import {
   nicknameExists,
@@ -72,6 +77,7 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
   }
 
   const nickname: string = results[0].nickname;
+  const userid = String(results[0].userid);
 
   const fileName = req.body.fileName;
   if (!isValidFileName(fileName) || !isValidNickname(nickname)) {
@@ -83,6 +89,29 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
           "Wrong Format",
           "Invalid track or user name.",
         ),
+      );
+    return;
+  }
+
+  const log = (verdict: ReplayVerdict, verified = false) =>
+    writeReplayLog(
+      nickname,
+      fileName,
+      replayEnvelope(
+        req.body,
+        { userid, nickname },
+        verdict,
+        req.get("user-agent") ?? null,
+      ),
+      verified,
+    );
+
+  if (!isReplayRecord(req.body.record)) {
+    await log("no-record");
+    res
+      .status(400)
+      .json(
+        createErrorResponse("failed", "Wrong Format", "Missing replay record."),
       );
     return;
   }
@@ -109,6 +138,7 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
     maxCombo === null ||
     difficultySelection === null
   ) {
+    await log("format");
     res
       .status(400)
       .json(
@@ -123,6 +153,7 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
 
   const rate = toPlaybackRate(req.body.rate);
   if (rate === null) {
+    await log("format");
     res
       .status(400)
       .json(
@@ -137,7 +168,7 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
 
   const totalJudge = perfect + great + good + bad + miss + bullet;
   if (totalJudge === 0 || score > MAX_SCORE) {
-    await writeReplayLog(nickname, fileName, req.body.record, false);
+    await log("range");
     res
       .status(400)
       .json(
@@ -153,7 +184,7 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
   const counts = { perfect, great, good, bad, miss, bullet };
   const { accuracy, rank, medal } = evaluateJudges(counts);
   if (rank != req.body.rank || accuracy != Number(req.body.accuracy)) {
-    await writeReplayLog(nickname, fileName, req.body.record, false);
+    await log("rank");
     res
       .status(400)
       .json(
@@ -168,6 +199,7 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
 
   const difficulty = await trackDifficulty(fileName, difficultySelection - 1);
   if (difficulty === null) {
+    await log("unknown-track");
     notFound(res, "Cannot find track or difficulty.");
     return;
   }
@@ -180,7 +212,7 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
     patternStats = null;
   }
   if (!patternStats) {
-    await writeReplayLog(nickname, fileName, req.body.record, false);
+    await log("pattern-unavailable");
     res
       .status(503)
       .json(
@@ -193,7 +225,7 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
     return;
   }
   if (!checkAgainstPattern(patternStats, counts, score, maxCombo, rate)) {
-    await writeReplayLog(nickname, fileName, req.body.record, false);
+    await log("pattern");
     res
       .status(400)
       .json(
@@ -206,7 +238,7 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
     return;
   }
 
-  if (!(await writeReplayLog(nickname, fileName, req.body.record))) {
+  if (!(await log("ok", true))) {
     res
       .status(400)
       .json(createErrorResponse("failed", "Wrong Format", "Invalid log path."));
