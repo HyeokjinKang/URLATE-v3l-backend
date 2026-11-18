@@ -92,16 +92,21 @@ export const checkPlaySession = async (
   }
 };
 
-/** Adds the song length the client reported, scaled by rate, so the log shows how far activeMs is from it. */
+/** Adds the expected active time (song length ÷ rate) next to the measured one. */
 export const withExpectedMs = (
   session: PlaySessionCheck,
-  record: unknown,
+  durationMs: number | null,
   rate: number,
-): PlaySessionCheck & { expectedMs?: number } => {
-  const songMs = (record as { settings?: { songMs?: unknown } } | null)
-    ?.settings?.songMs;
-  if (typeof songMs !== "number" || !Number.isFinite(songMs)) {
-    return session;
-  }
-  return { ...session, expectedMs: Math.round(songMs / rate) };
-};
+): PlaySessionCheck & { durationMs: number | null; expectedMs?: number } =>
+  durationMs === null
+    ? { ...session, durationMs }
+    : { ...session, durationMs, expectedMs: Math.round(durationMs / rate) };
+
+const LATE_SLACK_MS = 3000;
+const LATE_SLACK_RATIO = 0.02;
+const EARLY_SLACK_MS = 1500;
+
+/** True when the server-measured active time fits the song length at the submitted rate. */
+export const isPlayTimeValid = (activeMs: number, expectedMs: number) =>
+  activeMs >= expectedMs - EARLY_SLACK_MS &&
+  activeMs <= expectedMs * (1 + LATE_SLACK_RATIO) + LATE_SLACK_MS;

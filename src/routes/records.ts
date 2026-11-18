@@ -13,8 +13,13 @@ import {
   getPatternStats,
   toPlaybackRate,
 } from "../pattern-stats";
-import { checkPlaySession, withExpectedMs } from "../play-session";
+import {
+  checkPlaySession,
+  isPlayTimeValid,
+  withExpectedMs,
+} from "../play-session";
 import { submitRecord } from "../record";
+import { getTrackDurationMs } from "../track-duration";
 import {
   isReplayRecord,
   replayEnvelope,
@@ -177,9 +182,51 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
       difficultySelection,
       rate,
     }),
-    req.body.record,
+    await getTrackDurationMs(fileName),
     rate,
   );
+  if (session.status !== "ok") {
+    await log("session");
+    res
+      .status(session.status === "unavailable" ? 503 : 400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Failed to Verify",
+          `Play session could not be verified (${session.status}).`,
+        ),
+      );
+    return;
+  }
+  if (session.expectedMs === undefined) {
+    await log("duration-unavailable");
+    res
+      .status(503)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Failed to Verify",
+          "Failed to load the track for verification.",
+        ),
+      );
+    return;
+  }
+  if (
+    session.activeMs === undefined ||
+    !isPlayTimeValid(session.activeMs, session.expectedMs)
+  ) {
+    await log("timing");
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Failed to Verify",
+          "Play time does not match the track length and rate.",
+        ),
+      );
+    return;
+  }
 
   const totalJudge = perfect + great + good + bad + miss + bullet;
   if (totalJudge === 0 || score > MAX_SCORE) {

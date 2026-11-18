@@ -287,6 +287,9 @@ export type ReplayVerdict =
   | "format"
   | "range"
   | "rank"
+  | "session"
+  | "duration-unavailable"
+  | "timing"
   | "unknown-track"
   | "pattern-unavailable"
   | "pattern";
