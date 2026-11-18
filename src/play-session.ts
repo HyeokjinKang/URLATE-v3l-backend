@@ -13,6 +13,7 @@ export type PlaySessionStatus =
   | "unavailable"
   | "mismatch"
   | "reused"
+  | "saved"
   | "unfinished"
   | "interrupted";
 
@@ -78,7 +79,9 @@ export const checkPlaySession = async (
     }
 
     const first = await redisClient.hSetNX(key, "submittedAt", `${Date.now()}`);
-    if (!first) return { status: "reused", playId, ...timing };
+    if (!first) {
+      return { status: play.savedAt ? "saved" : "reused", playId, ...timing };
+    }
 
     if (play.interruptedAt || play.abandonedAt) {
       return { status: "interrupted", playId, ...timing };
@@ -90,6 +93,22 @@ export const checkPlaySession = async (
     signale.error(err);
     return { status: "unavailable", playId };
   }
+};
+
+/** Lets the same play be submitted again after the server failed to handle it. */
+export const releasePlaySession = async (playId: string | null) => {
+  if (!playId || !isRedisReady()) return;
+  await redisClient
+    .hDel(PLAY_KEY(playId), "submittedAt")
+    .catch((err) => signale.error(err));
+};
+
+/** Marks the play as stored so a retry of a lost response is answered with success. */
+export const markPlaySaved = async (playId: string | null) => {
+  if (!playId || !isRedisReady()) return;
+  await redisClient
+    .hSet(PLAY_KEY(playId), "savedAt", `${Date.now()}`)
+    .catch((err) => signale.error(err));
 };
 
 /** Adds the expected active time (song length ÷ rate) next to the measured one. */

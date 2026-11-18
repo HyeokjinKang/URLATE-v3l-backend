@@ -16,6 +16,8 @@ import {
 import {
   checkPlaySession,
   isPlayTimeValid,
+  markPlaySaved,
+  releasePlaySession,
   withExpectedMs,
 } from "../play-session";
 import { submitRecord } from "../record";
@@ -185,6 +187,10 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
     await getTrackDurationMs(fileName),
     rate,
   );
+  if (session.status === "saved") {
+    res.status(200).json(createSuccessResponse("success"));
+    return;
+  }
   if (session.status !== "ok") {
     await log("session");
     res
@@ -200,6 +206,7 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
   }
   if (session.expectedMs === undefined) {
     await log("duration-unavailable");
+    await releasePlaySession(session.playId);
     res
       .status(503)
       .json(
@@ -275,6 +282,7 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
   }
   if (!patternStats) {
     await log("pattern-unavailable");
+    await releasePlaySession(session.playId);
     res
       .status(503)
       .json(
@@ -331,9 +339,11 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
       judge: formatJudgeString(counts),
       accuracy,
     });
+    await markPlaySaved(session.playId);
     res.status(200).json(createSuccessResponse("success"));
   } catch (e) {
     signale.error(e);
+    await releasePlaySession(session.playId);
     res
       .status(500)
       .json(
