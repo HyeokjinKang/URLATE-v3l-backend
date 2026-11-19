@@ -13,7 +13,15 @@ import {
   getPatternStats,
   toPlaybackRate,
 } from "../pattern-stats";
+import {
+  checkPlaySession,
+  isPlayTimeValid,
+  markPlaySaved,
+  releasePlaySession,
+  withExpectedMs,
+} from "../play-session";
 import { submitRecord } from "../record";
+import { getTrackDurationMs } from "../track-duration";
 import {
   isReplayRecord,
   replayEnvelope,
@@ -93,6 +101,8 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
     return;
   }
 
+  let session: ReturnType<typeof withExpectedMs> | null = null;
+
   const log = (verdict: ReplayVerdict, verified = false) =>
     writeReplayLog(
       nickname,
@@ -102,6 +112,7 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
         { userid, nickname },
         verdict,
         req.get("user-agent") ?? null,
+        session,
       ),
       verified,
     );
@@ -166,6 +177,64 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
     return;
   }
 
+  session = withExpectedMs(
+    await checkPlaySession(req.body.playId, {
+      userid,
+      fileName,
+      difficultySelection,
+      rate,
+    }),
+    await getTrackDurationMs(fileName),
+    rate,
+  );
+  if (session.status === "saved") {
+    res.status(200).json(createSuccessResponse("success"));
+    return;
+  }
+  if (session.status !== "ok") {
+    await log("session");
+    res
+      .status(session.status === "unavailable" ? 503 : 400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Failed to Verify",
+          `Play session could not be verified (${session.status}).`,
+        ),
+      );
+    return;
+  }
+  if (session.expectedMs === undefined) {
+    await log("duration-unavailable");
+    await releasePlaySession(session.playId);
+    res
+      .status(503)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Failed to Verify",
+          "Failed to load the track for verification.",
+        ),
+      );
+    return;
+  }
+  if (
+    session.activeMs === undefined ||
+    !isPlayTimeValid(session.activeMs, session.expectedMs)
+  ) {
+    await log("timing");
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Failed to Verify",
+          "Play time does not match the track length and rate.",
+        ),
+      );
+    return;
+  }
+
   const totalJudge = perfect + great + good + bad + miss + bullet;
   if (totalJudge === 0 || score > MAX_SCORE) {
     await log("range");
@@ -213,6 +282,7 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
   }
   if (!patternStats) {
     await log("pattern-unavailable");
+    await releasePlaySession(session.playId);
     res
       .status(503)
       .json(
@@ -269,9 +339,11 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
       judge: formatJudgeString(counts),
       accuracy,
     });
+    await markPlaySaved(session.playId);
     res.status(200).json(createSuccessResponse("success"));
   } catch (e) {
     signale.error(e);
+    await releasePlaySession(session.playId);
     res
       .status(500)
       .json(

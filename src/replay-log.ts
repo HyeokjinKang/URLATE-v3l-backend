@@ -287,6 +287,9 @@ export type ReplayVerdict =
   | "format"
   | "range"
   | "rank"
+  | "session"
+  | "duration-unavailable"
+  | "timing"
   | "unknown-track"
   | "pattern-unavailable"
   | "pattern";
@@ -304,6 +307,7 @@ export const replayEnvelope = (
   user: { userid: string; nickname: string },
   verdict: ReplayVerdict,
   userAgent: string | null,
+  session: unknown = null,
 ) => ({
   v: 2,
   receivedAt: Date.now(),
@@ -315,6 +319,7 @@ export const replayEnvelope = (
   submitted: Object.fromEntries(
     SUBMITTED_FIELDS.map((key) => [key, body[key] ?? null]),
   ),
+  session,
   replay: body.record ?? null,
 });
 
