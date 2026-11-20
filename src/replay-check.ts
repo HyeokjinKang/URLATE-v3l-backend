@@ -37,7 +37,7 @@ export type ReplayCheckFailure =
   | "pause-seek"
   | "wall";
 
-export const MAX_PAUSES = 10;
+export const MAX_PAUSES = 5;
 
 const REPLAY_VERSION = 2;
 const MAX_EVENTS = 200_000;
