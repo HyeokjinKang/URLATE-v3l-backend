@@ -20,7 +20,9 @@ import {
   releasePlaySession,
   withExpectedMs,
 } from "../play-session";
+import { getReplayChart, ReplayChart } from "../pattern-chart";
 import { submitRecord } from "../record";
+import { checkReplay } from "../replay-check";
 import { getTrackDurationMs } from "../track-duration";
 import {
   isReplayRecord,
@@ -101,9 +103,16 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
     return;
   }
 
-  let session: ReturnType<typeof withExpectedMs> | null = null;
+  let session:
+    | Awaited<ReturnType<typeof checkPlaySession>>
+    | ReturnType<typeof withExpectedMs>
+    | null = null;
 
-  const log = (verdict: ReplayVerdict, verified = false) =>
+  const log = (
+    verdict: ReplayVerdict,
+    verified = false,
+    detail: string | null = null,
+  ) =>
     writeReplayLog(
       nickname,
       fileName,
@@ -113,6 +122,7 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
         verdict,
         req.get("user-agent") ?? null,
         session,
+        detail,
       ),
       verified,
     );
@@ -177,36 +187,67 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
     return;
   }
 
-  session = withExpectedMs(
-    await checkPlaySession(req.body.playId, {
-      userid,
-      fileName,
-      difficultySelection,
-      rate,
-    }),
-    await getTrackDurationMs(fileName),
+  const checked = await checkPlaySession(req.body.playId, {
+    userid,
+    fileName,
+    difficultySelection,
     rate,
-  );
-  if (session.status === "saved") {
+  });
+  session = checked;
+  if (checked.status === "saved") {
     res.status(200).json(createSuccessResponse("success"));
     return;
   }
-  if (session.status !== "ok") {
+  if (checked.status !== "ok") {
     await log("session");
     res
-      .status(session.status === "unavailable" ? 503 : 400)
+      .status(checked.status === "unavailable" ? 503 : 400)
       .json(
         createErrorResponse(
           "failed",
           "Failed to Verify",
-          `Play session could not be verified (${session.status}).`,
+          `Play session could not be verified (${checked.status}).`,
         ),
       );
     return;
   }
-  if (session.expectedMs === undefined) {
+
+  const difficulty = await trackDifficulty(fileName, difficultySelection - 1);
+  if (difficulty === null) {
+    await log("unknown-track");
+    notFound(res, "Cannot find track or difficulty.");
+    return;
+  }
+
+  const chart: ReplayChart | null = await getReplayChart(
+    fileName,
+    difficultySelection,
+  );
+  if (!chart) {
+    await log("pattern-unavailable");
+    await releasePlaySession(checked.playId);
+    res
+      .status(503)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Failed to Verify",
+          "Failed to load the pattern for verification.",
+        ),
+      );
+    return;
+  }
+
+  const timed = withExpectedMs(
+    checked,
+    await getTrackDurationMs(fileName),
+    chart.endMs,
+    rate,
+  );
+  session = timed;
+  if (timed.expectedMs === undefined || timed.durationMs === null) {
     await log("duration-unavailable");
-    await releasePlaySession(session.playId);
+    await releasePlaySession(timed.playId);
     res
       .status(503)
       .json(
@@ -219,8 +260,8 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
     return;
   }
   if (
-    session.activeMs === undefined ||
-    !isPlayTimeValid(session.activeMs, session.expectedMs)
+    timed.activeMs === undefined ||
+    !isPlayTimeValid(timed.activeMs, timed.expectedMs)
   ) {
     await log("timing");
     res
@@ -251,6 +292,28 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
   }
 
   const counts = { perfect, great, good, bad, miss, bullet };
+  const replayFailure = checkReplay({
+    record: req.body.record,
+    counts,
+    chart,
+    rate,
+    durationMs: timed.durationMs,
+    session: timed,
+  });
+  if (replayFailure) {
+    await log("replay", false, replayFailure);
+    res
+      .status(400)
+      .json(
+        createErrorResponse(
+          "failed",
+          "Failed to Verify",
+          `Replay does not match the play (${replayFailure}).`,
+        ),
+      );
+    return;
+  }
+
   const { accuracy, rank, medal } = evaluateJudges(counts);
   if (rank != req.body.rank || accuracy != Number(req.body.accuracy)) {
     await log("rank");
@@ -263,13 +326,6 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
           "Failed to verify submitted data.",
         ),
       );
-    return;
-  }
-
-  const difficulty = await trackDifficulty(fileName, difficultySelection - 1);
-  if (difficulty === null) {
-    await log("unknown-track");
-    notFound(res, "Cannot find track or difficulty.");
     return;
   }
 

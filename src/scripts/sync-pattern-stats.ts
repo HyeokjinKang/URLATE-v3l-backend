@@ -1,12 +1,14 @@
 import signale from "signale";
 
 import { knex } from "../db";
+import { chartCacheKey } from "../pattern-chart";
 import {
   fetchPatternStats,
   PatternStats,
   readStoredStats,
   storeStats,
 } from "../pattern-stats";
+import { redisClient } from "../redis";
 import { parseJson } from "../validate";
 
 const apply = process.argv.includes("--apply");
@@ -26,6 +28,7 @@ const main = async () => {
   if (only.length) {
     tracks = tracks.filter((track) => only.includes(track.fileName));
   }
+  const charts: string[] = [];
   let added = 0;
   let changed = 0;
   let failed = 0;
@@ -34,6 +37,7 @@ const main = async () => {
     const count = Array.isArray(difficulties) ? difficulties.length : 0;
     for (let index = 0; index < count; index++) {
       const label = `${fileName}/${index}`;
+      charts.push(chartCacheKey(fileName, index));
       let stats: PatternStats | null;
       try {
         stats = await fetchPatternStats(fileName, index);
@@ -55,6 +59,13 @@ const main = async () => {
     }
   }
   signale.info({ tracks: tracks.length, added, changed, failed });
+
+  if (apply && charts.length) {
+    await redisClient.connect();
+    await redisClient.del(charts);
+    redisClient.destroy();
+    signale.success("Cached replay charts cleared.");
+  }
 };
 
 main()

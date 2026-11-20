@@ -111,15 +111,29 @@ export const markPlaySaved = async (playId: string | null) => {
     .catch((err) => signale.error(err));
 };
 
-/** Adds the expected active time (song length ÷ rate) next to the measured one. */
+/**
+ * Adds the expected active time next to the measured one: the song length, or
+ * the end trigger when the chart has one before it, divided by the rate.
+ */
 export const withExpectedMs = (
   session: PlaySessionCheck,
   durationMs: number | null,
+  endMs: number | null,
   rate: number,
-): PlaySessionCheck & { durationMs: number | null; expectedMs?: number } =>
-  durationMs === null
-    ? { ...session, durationMs }
-    : { ...session, durationMs, expectedMs: Math.round(durationMs / rate) };
+): PlaySessionCheck & {
+  durationMs: number | null;
+  endMs: number | null;
+  expectedMs?: number;
+} => {
+  if (durationMs === null) return { ...session, durationMs, endMs };
+  const playMs = endMs === null ? durationMs : Math.min(durationMs, endMs);
+  return {
+    ...session,
+    durationMs,
+    endMs,
+    expectedMs: Math.round(Math.max(playMs, 0) / rate),
+  };
+};
 
 const LATE_SLACK_MS = 3000;
 const LATE_SLACK_RATIO = 0.02;

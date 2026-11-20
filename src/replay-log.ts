@@ -292,7 +292,8 @@ export type ReplayVerdict =
   | "timing"
   | "unknown-track"
   | "pattern-unavailable"
-  | "pattern";
+  | "pattern"
+  | "replay";
 
 /** True for the v2 replay object (`{ v, events: [] }`) and for the legacy bare event array. */
 export const isReplayRecord = (record: unknown): boolean =>
@@ -308,6 +309,7 @@ export const replayEnvelope = (
   verdict: ReplayVerdict,
   userAgent: string | null,
   session: unknown = null,
+  detail: string | null = null,
 ) => ({
   v: 2,
   receivedAt: Date.now(),
@@ -315,6 +317,7 @@ export const replayEnvelope = (
   nickname: user.nickname,
   fileName: body.fileName ?? null,
   verdict,
+  detail,
   userAgent,
   submitted: Object.fromEntries(
     SUBMITTED_FIELDS.map((key) => [key, body[key] ?? null]),
