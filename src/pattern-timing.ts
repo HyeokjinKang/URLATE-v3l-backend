@@ -47,8 +47,52 @@ const msIn = (segment: BpmSegment, beat: number) => {
   return rampMs + (Math.max(span - segment.duration, 0) * 60000) / segment.to;
 };
 
-/** Song time in ms (before the pattern offset) at which `beat` is reached. */
-export const createMsAt = (pattern: Record<string, unknown>) => {
+const beatIn = (segment: BpmSegment, ms: number) => {
+  const elapsed = ms - segment.ms;
+  if (segment.duration > 0) {
+    const rampMs = msIn(segment, segment.beat + segment.duration);
+    if (elapsed < rampMs) {
+      const slope = (segment.to - segment.from) / segment.duration;
+      if (slope === 0) return segment.beat + (elapsed * segment.from) / 60000;
+      return (
+        segment.beat +
+        (segment.from * Math.expm1((elapsed * slope) / 60000)) / slope
+      );
+    }
+    return (
+      segment.beat +
+      segment.duration +
+      ((elapsed - rampMs) * segment.to) / 60000
+    );
+  }
+  return segment.beat + (elapsed * segment.to) / 60000;
+};
+
+const lastAtOrBefore = (
+  segments: BpmSegment[],
+  key: "beat" | "ms",
+  value: number,
+) => {
+  let low = 0;
+  let high = segments.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (segments[mid][key] <= value) low = mid + 1;
+    else high = mid;
+  }
+  return low - 1;
+};
+
+export interface PatternTiming {
+  /** Song time in ms (before the pattern offset) at which `beat` is reached. */
+  msAt: (beat: number) => number;
+  /** Beat reached at `ms` of song time (before the pattern offset). */
+  beatAt: (ms: number) => number;
+}
+
+export const createTiming = (
+  pattern: Record<string, unknown>,
+): PatternTiming => {
   const information = pattern.information as Record<string, unknown>;
   const baseBpm = toNumber(information?.bpm);
   const gradual = minorVersion(pattern) >= 1;
@@ -77,10 +121,16 @@ export const createMsAt = (pattern: Record<string, unknown>) => {
     previous = segment;
   }
 
-  return (beat: number) => {
-    let i = -1;
-    for (let k = 0; k < segments.length && segments[k].beat <= beat; k++) i = k;
-    if (i < 0) return (beat * 60000) / baseBpm;
-    return segments[i].ms + msIn(segments[i], beat);
+  return {
+    msAt: (beat) => {
+      const i = lastAtOrBefore(segments, "beat", beat);
+      if (i < 0) return (beat * 60000) / baseBpm;
+      return segments[i].ms + msIn(segments[i], beat);
+    },
+    beatAt: (ms) => {
+      const i = lastAtOrBefore(segments, "ms", ms);
+      if (i < 0) return (ms * baseBpm) / 60000;
+      return beatIn(segments[i], ms);
+    },
   };
 };

@@ -1,5 +1,6 @@
 import { JudgeCounts } from "./judgement";
 import { ReplayChart } from "./pattern-chart";
+import { JudgeFailure, judgeReplay } from "./replay-judge";
 
 /** Event row written by URLATE public/js/player.js logEvent: [seekMs, wallMs, kind, index, mouseX, mouseY, judge, key]. */
 interface ReplayEvent {
@@ -7,12 +8,17 @@ interface ReplayEvent {
   wallMs: number;
   kind: string;
   index: number;
+  x: number;
+  y: number;
   judge: string;
+  key: string;
 }
 
 export interface ReplayCheckInput {
   record: unknown;
   counts: JudgeCounts;
+  score: number;
+  maxCombo: number;
   chart: ReplayChart;
   rate: number;
   durationMs: number;
@@ -35,7 +41,9 @@ export type ReplayCheckFailure =
   | "pause-count"
   | "pause-time"
   | "pause-seek"
-  | "wall";
+  | "wall"
+  | "chart"
+  | JudgeFailure;
 
 export const MAX_PAUSES = 5;
 
@@ -58,6 +66,24 @@ const JUDGE_KEYS: Record<string, keyof JudgeCounts> = {
   Bad: "bad",
 };
 
+const toFinite = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value) ? value : NaN;
+
+const parseSettings = (record: unknown) => {
+  const settings = (record as { settings?: unknown }).settings;
+  const s =
+    settings && typeof settings === "object"
+      ? (settings as Record<string, unknown>)
+      : {};
+  return {
+    patternHash: typeof s.patternHash === "string" ? s.patternHash : null,
+    soundOffset: toFinite(s.soundOffset),
+    displayOffset: toFinite(s.displayOffset ?? 0),
+    canvasWidth: toFinite(s.canvasWidth),
+    canvasHeight: toFinite(s.canvasHeight),
+  };
+};
+
 const parseEvents = (record: unknown): ReplayEvent[] | ReplayCheckFailure => {
   if (!record || typeof record !== "object" || Array.isArray(record))
     return "version";
@@ -67,7 +93,7 @@ const parseEvents = (record: unknown): ReplayEvent[] | ReplayCheckFailure => {
   const parsed: ReplayEvent[] = [];
   for (const row of events) {
     if (!Array.isArray(row) || row.length < 7) return "events";
-    const [seekMs, wallMs, kind, index, , , judge] = row;
+    const [seekMs, wallMs, kind, index, x, y, judge, key] = row;
     if (
       typeof seekMs !== "number" ||
       !Number.isFinite(seekMs) ||
@@ -80,7 +106,16 @@ const parseEvents = (record: unknown): ReplayEvent[] | ReplayCheckFailure => {
     ) {
       return "events";
     }
-    parsed.push({ seekMs, wallMs, kind, index, judge });
+    parsed.push({
+      seekMs,
+      wallMs,
+      kind,
+      index,
+      x: toFinite(x),
+      y: toFinite(y),
+      judge,
+      key: typeof key === "string" ? key : "",
+    });
   }
   return parsed;
 };
@@ -206,6 +241,8 @@ const checkPauses = (
 export const checkReplay = ({
   record,
   counts,
+  score,
+  maxCombo,
   chart,
   rate,
   durationMs,
@@ -213,6 +250,8 @@ export const checkReplay = ({
 }: ReplayCheckInput): ReplayCheckFailure | null => {
   const events = parseEvents(record);
   if (typeof events === "string") return events;
+  const settings = parseSettings(record);
+  if (settings.patternHash !== chart.hash) return "chart";
 
   const tallied = countReplayJudges(events, chart);
   if (tallied === "index") return "index";
@@ -230,5 +269,10 @@ export const checkReplay = ({
     const serverMs = session.endedAt - session.startedAt;
     if (events.some((e) => e.wallMs > serverMs + WALL_SLACK_MS)) return "wall";
   }
-  return null;
+
+  const judged = judgeReplay(events, chart, settings, rate, {
+    score,
+    maxCombo,
+  });
+  return judged.failure;
 };

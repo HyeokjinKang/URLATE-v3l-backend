@@ -77,10 +77,10 @@ const STATS_COLUMNS = [
   "holdTickWeight",
 ] as const;
 
-export const fetchPattern = async (
+export const fetchPatternText = async (
   fileName: string,
   patternIndex: number,
-): Promise<unknown> => {
+): Promise<string> => {
   const response = await fetch(
     `${config.project.cdn}/URLATE-patterns/${fileName}/${patternIndex}.json`,
     {
@@ -93,8 +93,14 @@ export const fetchPattern = async (
       `Pattern ${fileName}/${patternIndex} responded ${response.status}.`,
     );
   }
-  return response.json();
+  return response.text();
 };
+
+export const fetchPattern = async (
+  fileName: string,
+  patternIndex: number,
+): Promise<unknown> =>
+  JSON.parse(await fetchPatternText(fileName, patternIndex));
 
 export const fetchPatternStats = async (
   fileName: string,
