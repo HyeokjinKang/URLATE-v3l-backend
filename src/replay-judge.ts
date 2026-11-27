@@ -51,8 +51,11 @@ const END_MARGIN_BEATS = 2;
 /** One frame either side: the judged and the logged song time come from separate song.seek() calls. */
 const TIMING_SLACK_FRAMES = 1;
 const MAX_TIMING_MISMATCHES = 2;
-/** The click uses the hit list from the last frame, so the cursor may have moved since. */
-const POSITION_SLACK = 1.25;
+/**
+ * The click uses the hit list from the last frame, so the cursor may have moved since.
+ * Allowed in note radii of the longer canvas side, on top of the note radius.
+ */
+const POSITION_SLACK = 1;
 const MAX_FAR_PRESSES = 3;
 const MAX_FAR_PRESS_RATIO = 0.05;
 const SCORE_SLACK_RATIO = 0.002;
@@ -202,7 +205,9 @@ export const judgeReplay = (
         }
         const dx = ((event.x - x) * canvasWidth) / 200;
         const dy = ((event.y - y) * canvasHeight) / 200;
-        const radius = (canvasWidth / 40) * POSITION_SLACK;
+        const radius =
+          canvasWidth / 40 +
+          (Math.max(canvasWidth, canvasHeight) / 40) * POSITION_SLACK;
         if (!(dx * dx + dy * dy <= radius * radius)) result.farPresses++;
         presses++;
         if (value === HOLD_NOTE) {
