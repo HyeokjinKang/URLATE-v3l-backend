@@ -295,6 +295,8 @@ router.put("/playRecord", ...playRecordGuards, async (req, res) => {
   const replayFailure = checkReplay({
     record: req.body.record,
     counts,
+    score,
+    maxCombo,
     chart,
     rate,
     durationMs: timed.durationMs,
